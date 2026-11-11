@@ -3,9 +3,8 @@
 This protocol is shared with [MTG Tracker Desktop](https://github.com/JohnathanKong/mtg-tracker-desktop).
 
 The ESP32-S3 receiver is **native ESP-IDF C++**, not Arduino/PlatformIO.
-Serial runs at 115200 baud over the board's ESP32-S3 UART0 USB-to-UART bridge.
-USB-C orientation selects which of the two onboard ESP32 processors is connected.
-The UART routing still requires physical hardware validation.
+Serial is exposed as a Windows COM port over the ESP32-S3's **native USB Serial/JTAG CDC** connection. The desktop configures the virtual COM port at 115200 baud for compatibility; actual USB throughput is not UART clocked.
+USB-C orientation selects the connected processor: the **ESP32-S3** uses native USB Serial/JTAG, while the other orientation connects the secondary classic ESP32 through a USB-UART bridge. The live USB receiver still requires hardware validation.
 
 ## Messages
 
