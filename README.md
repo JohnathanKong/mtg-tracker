@@ -7,6 +7,8 @@ The desktop deck manager is a [separate repository](https://github.com/Johnathan
 
 > **Current milestone:** The firmware displays a live MTG Tracker status interface on the **360×360 round screen** and receives/stores deck profiles. It shows boot, ready, receiving progress, success/failure and saved deck count. The touchscreen, rotary knob and actual gameplay counters are not implemented yet. Flashing **replaces the existing Waveshare factory firmware** on the S3. Save the vendor's [factory firmware/recovery instructions](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) before flashing.
 
+**First build after the display update:** Run `git pull` then `build.bat` normally from the ESP-IDF terminal. `build.bat` detects an old `sdkconfig` without PSRAM, saves it as `sdkconfig.pre-display-backup`, and regenerates the ESP32-S3 configuration with display support. It does not remove deck profiles. If ESP-IDF still reports a stale build directory, remove only generated `build/` and retry.
+
 ## Windows 11 / VS Code — everyday build
 
 Prerequisites: VS Code with the **Espressif IDF** extension already configured for **ESP-IDF v6.1**, and this repo cloned. You can reuse the very same ESP-IDF installation you use for your GC8 gauge. The MTG knob is a **different board/project**; nothing in the GC8 repository needs to be changed.
