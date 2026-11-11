@@ -22,7 +22,7 @@ disconnect, flip the plug 180 degrees and reconnect.
 Docker from project root:
 
     docker build -t mtg-tracker-firmware .
-    docker run --rm -v "\${PWD}:/src" -w /src mtg-tracker-firmware
+    docker run --rm -v "${PWD}:/src" -w /src mtg-tracker-firmware
 
 Output: build/firmware.bin. Building does not flash anything.
 
