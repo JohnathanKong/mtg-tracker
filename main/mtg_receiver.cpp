@@ -1,5 +1,6 @@
 // MTG Tracker USB deck-profile receiver — native ESP-IDF 6.1.
-// Intentionally headless: display, touch, encoder and audio are later milestones.
+// Boot, sync progress and errors are shown on the round LCD.
+// Touch, encoder and audio are later milestones.
 // Wire-compatible with mtg-tracker-desktop/src/DeviceSync.cpp (MTG1 protocol).
 
 #include <algorithm>
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <string>
 
+#include "mtg_display.h"
 #include "cJSON.h"
 #include "driver/uart.h"
 #include "esp_err.h"
@@ -42,6 +44,8 @@ uint32_t rollingCrc = 0xFFFFFFFFu;
 int64_t lastByteAt = 0;
 char line[kMaxLine + 1] = {};
 size_t lineLength = 0;
+int lastProgressStep = -1;
+int shownDeckCount = 0;
 
 void reply(const char *message) {
     uart_write_bytes(kPort, message, std::strlen(message));
@@ -49,6 +53,7 @@ void reply(const char *message) {
 }
 
 void replyError(const char *reason) {
+    mtg_display_show(MthStatus::Error, shownDeckCount, 0, reason);
     char output[100];
     std::snprintf(output, sizeof(output), "MTG1 ERROR %s", reason);
     reply(output);
@@ -219,16 +224,20 @@ void commitTransfer() {
 
     receiving = false;
     expectedBytes = receivedBytes = chunkRemaining = 0;
+    shownDeckCount = count;
+    lastProgressStep = -1;
     char output[100];
     std::snprintf(output, sizeof(output), "MTG1 STORED %d %08lX",
                   count, static_cast<unsigned long>(checksum));
     reply(output);
+    mtg_display_show(MthStatus::Complete, shownDeckCount);
 }
 
 void processLine(const char *command) {
     if (std::strcmp(command, "MTG1 HELLO") == 0) {
         if (receiving) abortTransfer();
         reply("MTG1 READY 1");
+        mtg_display_show(MthStatus::Ready, shownDeckCount);
         return;
     }
     if (std::strcmp(command, "MTG1 STATUS") == 0) {
@@ -264,7 +273,9 @@ void processLine(const char *command) {
         }
         receiving = true;
         lastByteAt = esp_timer_get_time();
+        lastProgressStep = 0;
         reply("MTG1 OK");
+        mtg_display_show(MthStatus::Receiving, shownDeckCount, 0);
         return;
     }
 
@@ -306,6 +317,11 @@ void receiveByte(uint8_t byte) {
             std::snprintf(output, sizeof(output), "MTG1 NEXT %u",
                           static_cast<unsigned>(receivedBytes));
             reply(output);
+            const int step = expectedBytes ? int((receivedBytes * 10) / expectedBytes) : 0;
+            if (step > lastProgressStep) {
+                lastProgressStep = step;
+                mtg_display_show(MthStatus::Receiving, shownDeckCount, step * 10);
+            }
         }
         return;
     }
@@ -367,9 +383,14 @@ void setupSerial() {
 } // namespace
 
 extern "C" void app_main(void) {
+    const bool screenOk = mtg_display_init();
     setupStorage();
     setupSerial();
-    ESP_LOGI("mtg", "MTG1 sync receiver ready (ESP-IDF), storage=%d", int(storageReady));
+    shownDeckCount = storedDeckCount();
+    mtg_display_show(storageReady ? MthStatus::Ready : MthStatus::StorageError,
+                     shownDeckCount);
+    ESP_LOGI("mtg", "MTG1 sync receiver ready (ESP-IDF), storage=%d, lcd=%d, decks=%d",
+             int(storageReady), int(screenOk), shownDeckCount);
 
     while (true) {
         uint8_t byte = 0;
