@@ -1,4 +1,8 @@
 build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
 .pio/
 .vscode/
 __pycache__/
