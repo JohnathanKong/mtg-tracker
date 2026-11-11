@@ -1,0 +1,31 @@
+name: Build ESP32-S3 sync firmware
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create isolated PlatformIO compiler image
+        run: docker build -t mtg-tracker-firmware .
+      - name: Compile ESP32-S3 firmware in Docker
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src mtg-tracker-firmware
+      - name: Verify firmware output
+        run: |
+          test -s build/firmware.bin
+          test -s .pio/build/waveshare-knob-s3/partitions.bin
+          ls -lh build/firmware.bin
+      - name: Upload firmware for later manual flashing
+        uses: actions/upload-artifact@v4
+        with:
+          name: MTG-Tracker-ESP32S3-firmware
+          path: |
+            .pio/build/waveshare-knob-s3/firmware.bin
+            .pio/build/waveshare-knob-s3/bootloader.bin
+            .pio/build/waveshare-knob-s3/partitions.bin
+          if-no-files-found: error
