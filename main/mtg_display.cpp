@@ -281,7 +281,7 @@ bool mtg_display_init() {
     const esp_lcd_panel_io_spi_config_t ioConfig =
         SH8601_PANEL_IO_QSPI_CONFIG(kCs, onColorDone, gTransferDone);
     if (!check(esp_lcd_new_panel_io_spi(
-        reinterpret_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &ioConfig, &gIo),
+        static_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &ioConfig, &gIo),
         "SH8601 QSPI panel IO"))
         return false;
 
@@ -292,7 +292,7 @@ bool mtg_display_init() {
     vendor.flags.use_qspi_interface = 1;
 
     esp_lcd_panel_dev_config_t panelConfig = {};
-    panelConfig.reset_gpio_num = kReset;
+    panelConfig.reset_gpio_num = static_cast<gpio_num_t>(kReset);
     panelConfig.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
     panelConfig.bits_per_pixel = 16;
     panelConfig.vendor_config = &vendor;
