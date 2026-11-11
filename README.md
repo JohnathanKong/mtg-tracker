@@ -52,7 +52,58 @@ Find the files here relative to the firmware repository:
 
 Alternatively, use the [firmware GitHub Actions builds](https://github.com/JohnathanKong/mtg-tracker/actions): open the latest **successful** run, download the `MTG-Tracker-ESP32S3-firmware` artifact, and extract the ZIP to find the same **full-flash** image. The CI job compiles inside Docker and verifies the merged file exists.
 
-## 2. Flash the ESP32-S3 from Windows
+## 2. Flash using your existing VS Code ESP-IDF installation (recommended)
+
+If you already have ESP-IDF installed for another ESP32 project, **reuse its
+`esptool` utility**. The MTG firmware stays Arduino/PlatformIO-built in Docker;
+ESP-IDF is used here **only to upload the combined image**. There is no need
+to rebuild the project in ESP-IDF and no need to use the web browser.
+
+1. In VS Code, open the Command Palette and select
+   **ESP-IDF: Open ESP-IDF Terminal**. This activates the existing ESP-IDF
+   Python environment and flashing tools.
+2. Disconnect any other ESP boards (including your GC8 gauge). Connect the
+   **MTG Waveshare knob** by USB-C and identify its COM port in Windows Device
+   Manager. Plug orientation determines which onboard processor is addressed.
+3. From the ESP-IDF terminal, change into the MTG firmware repo:
+
+   ```powershell
+   cd C:\Users\User\Projects\mtg-tracker
+   python -m esptool version
+   ```
+
+4. If esptool reports **v5**, use the following, replacing `COMx` with the
+   actual knob port:
+
+   ```powershell
+   python -m esptool --chip esp32s3 --port COMx --baud 460800 write-flash 0x0 .\build\MTG-Tracker-ESP32S3-full-flash.bin
+   ```
+
+   If the installed esptool is **v4**, its command name is `write_flash`:
+
+   ```powershell
+   python -m esptool --chip esp32s3 --port COMx --baud 460800 write_flash 0x0 .\build\MTG-Tracker-ESP32S3-full-flash.bin
+   ```
+
+5. Confirm the connected chip is **ESP32-S3**, not the secondary ESP32. If
+   the chip identification is wrong, **stop**; reverse the USB-C plug and
+   reconnect. If the device cannot enter bootloader mode automatically, use
+   the ESP32-S3 BOOT button following Waveshare's instructions.
+6. On successful upload, reset/power-cycle the device and continue to
+   **Step 3 — Send your decks** below.
+
+**Do not run `idf.py flash` in the GC8 project or in this PlatformIO repo.**
+`idf.py flash` uses the active ESP-IDF project's own build files; here we
+are uploading the specifically named **MTG combined image** with `esptool`.
+The combined image contains a partition table and replaces the factory S3
+firmware; the display may be blank until we build the touchscreen UI.
+
+### Browser-based alternative (when ESP-IDF is not installed)
+
+The official Espressif browser tool is an optional way to upload the same
+image without installing development tools. Use the instructions below.
+
+#### Browser flashing instructions
 
 **Before flashing:** the Waveshare contains an **ESP32-S3 and a separate ESP32**. The reversible USB-C connection selects different programming channels depending on insertion orientation. Never flash unless the browser positively identifies **ESP32-S3**. [Waveshare's instructions and FAQ](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) cover the connector and BOOT procedure.
 
