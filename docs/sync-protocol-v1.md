@@ -1,6 +1,6 @@
 # USB sync protocol v1
 
-Connection: 115200 baud, USB serial to ESP32-S3. ASCII commands end in LF.
+Connection: 115200 baud, USB-to-UART serial bridge to ESP32-S3 UART0. ASCII commands end in LF.
 Maximum line length is 96 bytes. Data chunks are raw bytes, not line terminated.
 
 Desktop sends / device replies:
@@ -44,3 +44,7 @@ are removed before the complete transfer is validated.
 Waveshare has dual processors; USB-C plug orientation selects the connected
 processor. Target ESP32-S3 and enable USB CDC. Flashing the receiver firmware
 overwrites the factory UI; the display/knob are not configured in milestone 1.
+
+Initial flashing is separate from ordinary sync: use the full merged BIN
+at 0x0 in Espressif's browser flasher (Chrome/Edge). The desktop sync page
+cannot flash firmware; it only sends deck metadata after the receiver boots.
