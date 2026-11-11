@@ -278,8 +278,19 @@ bool mtg_display_init() {
     if (!check(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO), "QSPI bus"))
         return false;
 
-    const esp_lcd_panel_io_spi_config_t ioConfig =
-        SH8601_PANEL_IO_QSPI_CONFIG(kCs, onColorDone, gTransferDone);
+    // Use zero-initialized fields instead of the upstream QSPI aggregate macro:
+    // ESP-IDF 6.1 builds C++ with -Werror=missing-field-initializers.
+    esp_lcd_panel_io_spi_config_t ioConfig = {};
+    ioConfig.cs_gpio_num = static_cast<gpio_num_t>(kCs);
+    ioConfig.dc_gpio_num = static_cast<gpio_num_t>(-1);
+    ioConfig.spi_mode = 0;
+    ioConfig.pclk_hz = 40 * 1000 * 1000;
+    ioConfig.trans_queue_depth = 10;
+    ioConfig.on_color_trans_done = onColorDone;
+    ioConfig.user_ctx = gTransferDone;
+    ioConfig.lcd_cmd_bits = 32;
+    ioConfig.lcd_param_bits = 8;
+    ioConfig.flags.quad_mode = true;
     if (!check(esp_lcd_new_panel_io_spi(
         static_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &ioConfig, &gIo),
         "SH8601 QSPI panel IO"))
