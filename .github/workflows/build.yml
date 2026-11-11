@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate transfer framing and CRC reference
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
       - name: Create isolated PlatformIO compiler image
         run: docker build -t mtg-tracker-firmware .
       - name: Compile ESP32-S3 firmware in Docker
