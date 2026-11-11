@@ -5,7 +5,7 @@ The desktop deck manager is a [separate repository](https://github.com/Johnathan
 
 **This repository is a native ESP-IDF v6.1 / C++ project, using the exact same VS Code development workflow as the GC8 gauge.** No PlatformIO, Arduino IDE, Docker, browser flasher, or manually invoked Python/esptool commands are needed for everyday firmware development.
 
-> **Current milestone:** The firmware receives deck profiles over USB and saves them on the ESP32-S3. The **touchscreen and rotary knob interface are NOT implemented yet**; the screen may remain blank after flashing. Flashing **replaces the existing Waveshare factory firmware** on the S3. Save the vendor's [factory firmware/recovery instructions](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) before flashing.
+> **Current milestone:** The firmware displays a live MTG Tracker status interface on the **360×360 round screen** and receives/stores deck profiles. It shows boot, ready, receiving progress, success/failure and saved deck count. The touchscreen, rotary knob and actual gameplay counters are not implemented yet. Flashing **replaces the existing Waveshare factory firmware** on the S3. Save the vendor's [factory firmware/recovery instructions](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) before flashing.
 
 ## Windows 11 / VS Code — everyday build
 
@@ -105,7 +105,7 @@ The first hardware test may expose UART/USB routing issues; the protocol and fir
 | Build shows stale files or old PlatformIO output | Delete the generated root `build` folder once and rebuild. |
 | The wrong chip or COM port is selected | Disconnect other ESP32 boards; flip the knob's USB-C plug 180°; select **ESP32-S3**. |
 | Flash/download mode cannot be entered | Hold the **ESP32-S3 BOOT** button while reconnecting USB as documented by Waveshare. |
-| Screen is blank after flashing | Expected: **display and knob controls aren't built yet**. |
+| Screen is blank after flashing | **Not expected with the new status UI.** Confirm the new firmware compiled and was flashed to the S3, check Monitor Device for `mtg_display` errors, and confirm the ESP-IDF target is `esp32s3`. |
 | Device Sync cannot open the COM port | Exit **Monitor Device**, any serial terminal, and anything else using that port. |
 | Sync reports no reply or times out | Check that MTG firmware, not Waveshare factory software, was flashed to the **ESP32-S3**; confirm USB orientation and COM port. Hardware testing is still pending. |
 | Want the factory interface back | Use Waveshare's factory firmware for **this exact knob** and its recovery instructions. |
@@ -123,9 +123,15 @@ The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-I
 | `sdkconfig.defaults` | ESP32-S3, 16 MB flash, UART and partition defaults. |
 | `partitions.csv` | NVS, OTA application slots and SPIFFS storage. |
 | `main/mtg_receiver.cpp` | Native ESP-IDF UART receiver, JSON validation and flash persistence. |
+| `main/mtg_display.cpp`, `.h` | Round 360×360 SH8601 QSPI display, PWM backlight, original text/status renderer. |
+| `main/panel_init_commands.h` | SH8601 panel power-up sequence adapted from an Apache-2.0 hardware reference; see `THIRD_PARTY_NOTICES.md`. |
 | `main/idf_component.yml` | ESP-IDF-managed cJSON dependency. |
 | `docs/sync-protocol-v1.md` | Desktop/device USB handshake and deck JSON format. |
 | `.github/workflows/build.yml` | ESP-IDF v6.1 compilation in GitHub Actions. |
+
+**What appears on the display:** `MTG TRACKER`, `READY TO SYNC`, `DECKS STORED: 0`, and connection guidance. When data arrives it changes to `RECEIVING` with progress; then `SYNC COMPLETE` or `SYNC FAILED` with a reason. The on-device status display is designed to keep working without the desktop. It is a diagnostic UI, not yet the deck picker/gameplay interface.
+
+**Display hardware:** 360×360 round SH8601 panel over QSPI using GPIO 13–18 and 21, with GPIO47 PWM brightness. The firmware uses PSRAM and Espressif's managed `esp_lcd_sh8601` driver, not a web browser or an additional host toolchain. The first physical LCD test is still pending.
 
 The firmware uses the same **MTG1** deck-sync protocol as the desktop app. It validates each block, CRC-32, and JSON before replacing previously saved profiles. No Wi-Fi, NFC or additional external hardware is required for this stage.
 
