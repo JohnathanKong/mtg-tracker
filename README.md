@@ -12,13 +12,16 @@ The desktop deck manager is a [separate repository](https://github.com/Johnathan
 Prerequisites: VS Code with the **Espressif IDF** extension already configured for **ESP-IDF v6.1**, and this repo cloned. You can reuse the very same ESP-IDF installation you use for your GC8 gauge. The MTG knob is a **different board/project**; nothing in the GC8 repository needs to be changed.
 
 1. Open this folder in VS Code: `C:\Users\User\Projects\mtg-tracker` (adjust if you cloned elsewhere).
-2. Press **Ctrl+Shift+P**, run **ESP-IDF: Open ESP-IDF Terminal**. **Do not use ordinary PowerShell or Git Bash**: they will not have the ESP-IDF environment configured.
-3. In that new ESP-IDF terminal, run **`build.bat`** (or `.\build.bat` if it is a PowerShell terminal).
-4. Wait for the build to finish. **Do not flash if the build fails.** Copy the **first actual error** and last 20–30 output lines if troubleshooting is needed.
+2. Press **Ctrl+Shift+P** and choose **ESP-IDF: Set Espressif Device Target** → **esp32s3** (NOT plain `esp32`). The VS Code ESP-IDF status bar should display **esp32s3**.
+3. Open a **new** terminal via **Ctrl+Shift+P → ESP-IDF: Open ESP-IDF Terminal**. **Do not use ordinary PowerShell or Git Bash**: they will not have the ESP-IDF environment configured.
+4. In that new ESP-IDF terminal, run **`build.bat`** (or `.\build.bat` if it is a PowerShell terminal).
+5. Wait for the build to finish. **Do not flash if the build fails.** Copy the **first actual error** and last 20–30 output lines if troubleshooting is needed.
 
 After a successful build, connect the MTG Waveshare by USB-C, select the correct **ESP32-S3** COM port and **UART** flashing method in the ESP-IDF extension, then run **ESP-IDF: Flash Your Project**. After flashing, run **ESP-IDF: Monitor Device** to inspect boot logs. Exit the monitor with **Ctrl+]**.
 
-**That's the entire workflow: open ESP-IDF terminal → `build.bat` → Flash Your Project → Monitor Device.**
+**That's the entire workflow: select `esp32s3` → open ESP-IDF terminal → `build.bat` → Flash Your Project → Monitor Device.**
+
+**You do not need the physical device connected to build firmware.** Device detection and the COM-port choice are only needed for **flashing and monitoring after a successful build**.
 
 You do not need to build a separate `.bin` with Docker or run Espressif's browser-based flashing tool. The ESP-IDF extension uses the app, partition table and bootloader from **this project's own ESP-IDF build**.
 
@@ -29,10 +32,43 @@ Do this **once**, before building the converted project:
 1. Stop running builds and serial monitors.
 2. Run `git pull` in the MTG project folder.
 3. If the project root contains `sdkconfig` from an unrelated ESP-IDF setup, rename it to `sdkconfig.backup`. (The previous PlatformIO version normally did not create one.)
-4. **Delete only the generated root `build` directory from the old firmware build**, if present. Do not delete your project source, deck profiles, or other directories. The root `build` folder is generated and will be recreated by ESP-IDF.
-5. In VS Code open **ESP-IDF: Open ESP-IDF Terminal**, then run `build.bat`. If `sdkconfig` does not exist, the script selects **esp32s3**, loads `sdkconfig.defaults`, and generates a fresh configuration.
+4. **Delete only the generated root `build` directory from the old firmware build**, if present. ESP-IDF will refuse to clean an existing PlatformIO build directory because it is **not an ESP-IDF/CMake build directory**. From PowerShell **in the MTG repository root**, run:
+
+   ```powershell
+   Remove-Item -Recurse -Force .\build
+   ```
+
+   This deletes **only old generated compilation output**, not source code or desktop deck profiles. If the folder is already gone, skip this command.
+5. In VS Code, run **ESP-IDF: Set Espressif Device Target → esp32s3**. Close old terminals and open a **fresh ESP-IDF terminal**.
+6. Run `build.bat` (or `.\build.bat`). If `sdkconfig` does not exist, the script selects **esp32s3**, loads `sdkconfig.defaults`, and generates a new configuration. **The target in the VS Code environment must also match.**
 
 This is comparable to the first-build cleanup you already did for the GC8 gauge. After this, you only need `git pull` and `build.bat` for normal development.
+
+## Fix: `esp32s3` target conflicts with `esp32` in the environment
+
+The first ESP-IDF build can stop with:
+
+```text
+Target 'esp32s3' specified on command line is not consistent with target 'esp32' in the environment.
+```
+
+This means the **VS Code/ESP-IDF environment is targeting the wrong chip**. It does **not** mean the USB device wasn't detected: the build has not reached flashing yet.
+
+1. In VS Code press **Ctrl+Shift+P** → **ESP-IDF: Set Espressif Device Target** → choose **esp32s3**. Check that the ESP-IDF status bar says `esp32s3`, not `esp32`.
+2. **Close the old ESP-IDF terminal**, and open a fresh one using **ESP-IDF: Open ESP-IDF Terminal**.
+3. Run `.\build.bat` again.
+
+If the same mismatch persists, in the **new ESP-IDF PowerShell terminal**, inspect the target and set it for that terminal session before rebuilding:
+
+```powershell
+$env:IDF_TARGET
+$env:IDF_TARGET = "esp32s3"
+.\build.bat
+```
+
+This environment variable change is **temporary and only affects that terminal**. Use the VS Code device-target selector for the persistent project choice. Do not change your GC8 files or globally change the target.
+
+**The device does not need to be connected for this step.** After the build succeeds, connect the MTG knob and select its COM port for flashing.
 
 ## Connect the correct processor before flashing
 
@@ -64,6 +100,8 @@ The first hardware test may expose UART/USB routing issues; the protocol and fir
 | Symptom | Action |
 | --- | --- |
 | `ERROR: ESP-IDF environment is not active` | Open **ESP-IDF: Open ESP-IDF Terminal** in VS Code, not a normal shell. |
+| `build` directory doesn't seem to be a CMake build directory | Run `Remove-Item -Recurse -Force .\build` **from the MTG repo root** once, then rebuild. This is stale PlatformIO output, not a device-detection error. |
+| `Target 'esp32s3' ... not consistent with target 'esp32' in the environment` | Select **ESP-IDF: Set Espressif Device Target → esp32s3** and open a fresh ESP-IDF terminal. If necessary set `$env:IDF_TARGET = "esp32s3"` in that terminal before rebuilding. |
 | Build shows stale files or old PlatformIO output | Delete the generated root `build` folder once and rebuild. |
 | The wrong chip or COM port is selected | Disconnect other ESP32 boards; flip the knob's USB-C plug 180°; select **ESP32-S3**. |
 | Flash/download mode cannot be entered | Hold the **ESP32-S3 BOOT** button while reconnecting USB as documented by Waveshare. |
