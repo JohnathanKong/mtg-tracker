@@ -1,4 +1,4 @@
-name: Build ESP32-S3 sync firmware
+name: Build ESP32-S3 MTG firmware with ESP-IDF
 
 on:
   push:
@@ -6,30 +6,21 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   firmware:
+    name: Compile native ESP-IDF v6.1 firmware
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Validate transfer framing and CRC reference
+      - name: Test MTG1 transfer reference
         run: python3 -m unittest discover -s tests -p "test_*.py" -v
-      - name: Create isolated PlatformIO compiler image
-        run: docker build -t mtg-tracker-firmware .
-      - name: Compile ESP32-S3 firmware in Docker
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src mtg-tracker-firmware
-      - name: Verify firmware output
-        run: |
-          test -s build/firmware.bin
-          test -s build/MTG-Tracker-ESP32S3-full-flash.bin
-          test -s .pio/build/waveshare-knob-s3/partitions.bin
-          ls -lh build/firmware.bin build/MTG-Tracker-ESP32S3-full-flash.bin
-      - name: Upload firmware for later manual flashing
-        uses: actions/upload-artifact@v4
+      - name: Build using Espressif's ESP-IDF v6.1 container
+        uses: espressif/esp-idf-ci-action@v1
         with:
-          name: MTG-Tracker-ESP32S3-firmware
-          path: |
-            build/MTG-Tracker-ESP32S3-full-flash.bin
-            .pio/build/waveshare-knob-s3/firmware.bin
-            .pio/build/waveshare-knob-s3/bootloader.bin
-            .pio/build/waveshare-knob-s3/partitions.bin
-          if-no-files-found: error
+          esp_idf_version: v6.1
+          target: esp32s3
+          path: .
