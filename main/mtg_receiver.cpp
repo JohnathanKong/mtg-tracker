@@ -13,7 +13,7 @@
 
 #include "mtg_display.h"
 #include "cJSON.h"
-#include "driver/uart.h"
+#include "driver/usb_serial_jtag.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
@@ -22,8 +22,9 @@
 #include "freertos/task.h"
 
 namespace {
-constexpr uart_port_t kPort = UART_NUM_0;
-constexpr int kBaud = 115200;
+// The knob exposes its ESP32-S3 on the built-in USB Serial/JTAG interface.
+// Its USB-C reverse orientation connects a separate classic ESP32 UART bridge.
+// Do NOT use UART0 for MTG1 sync: that is not the S3 COM port.
 constexpr size_t kMaxPayload = 65536;
 constexpr size_t kMaxChunk = 256;
 constexpr size_t kMaxLine = 95;
@@ -48,8 +49,11 @@ int lastProgressStep = -1;
 int shownDeckCount = 0;
 
 void reply(const char *message) {
-    uart_write_bytes(kPort, message, std::strlen(message));
-    uart_write_bytes(kPort, "\n", 1);
+    // On native USB the Win32 COM endpoint maps to the S3 USB Serial/JTAG
+    // hardware, not ESP-IDF UART0. TX buffering prevents dropped ACKs.
+    usb_serial_jtag_write_bytes(message, std::strlen(message),
+                                pdMS_TO_TICKS(1000));
+    usb_serial_jtag_write_bytes("\n", 1, pdMS_TO_TICKS(1000));
 }
 
 void replyError(const char *reason) {
@@ -368,17 +372,11 @@ void setupStorage() {
 }
 
 void setupSerial() {
-    uart_config_t config = {};
-    config.baud_rate = kBaud;
-    config.data_bits = UART_DATA_8_BITS;
-    config.parity = UART_PARITY_DISABLE;
-    config.stop_bits = UART_STOP_BITS_1;
-    config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
-    config.source_clk = UART_SCLK_DEFAULT;
-    ESP_ERROR_CHECK(uart_param_config(kPort, &config));
-    ESP_ERROR_CHECK(uart_set_pin(kPort, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
-                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    ESP_ERROR_CHECK(uart_driver_install(kPort, 2048, 2048, 0, nullptr, 0));
+    usb_serial_jtag_driver_config_t config = {};
+    config.tx_buffer_size = 4096;
+    config.rx_buffer_size = 4096;
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&config));
+    ESP_LOGI("mtg", "USB Serial/JTAG receiver installed on S3 native USB");
 }
 } // namespace
 
@@ -394,7 +392,7 @@ extern "C" void app_main(void) {
 
     while (true) {
         uint8_t byte = 0;
-        const int count = uart_read_bytes(kPort, &byte, 1, pdMS_TO_TICKS(20));
+        const int count = usb_serial_jtag_read_bytes(&byte, 1, pdMS_TO_TICKS(20));
         if (count == 1) receiveByte(byte);
         if (receiving &&
             esp_timer_get_time() - lastByteAt > kIdleTimeoutUs) {
