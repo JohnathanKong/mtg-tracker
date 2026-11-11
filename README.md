@@ -1,162 +1,94 @@
 # MTG Tracker — ESP32-S3 firmware
 
-Firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8**, companion to [MTG Tracker Desktop](https://github.com/JohnathanKong/mtg-tracker-desktop).
+Firmware for the [Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8).
+The desktop deck manager is a [separate repository](https://github.com/JohnathanKong/mtg-tracker-desktop).
 
-> **Current status:** This is an early **USB deck-sync receiver**, not the finished MTG touchscreen/knob interface. It can receive and store deck metadata, but it does not yet display decks or run counters. Its serial connection has **not been verified on the physical board**.
->
-> **Flashing replaces the factory firmware on the ESP32-S3.** Do not flash until you are comfortable losing the original display interface and have downloaded the [Waveshare factory firmware/recovery resources](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8). The other onboard ESP32 is a separate processor.
+**This repository is a native ESP-IDF v6.1 / C++ project, using the exact same VS Code development workflow as the GC8 gauge.** No PlatformIO, Arduino IDE, Docker, browser flasher, or manually invoked Python/esptool commands are needed for everyday firmware development.
 
-## What you need
+> **Current milestone:** The firmware receives deck profiles over USB and saves them on the ESP32-S3. The **touchscreen and rotary knob interface are NOT implemented yet**; the screen may remain blank after flashing. Flashing **replaces the existing Waveshare factory firmware** on the S3. Save the vendor's [factory firmware/recovery instructions](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) before flashing.
 
-- A Windows PC with Docker Desktop running **Linux containers**, and Git.
-- A USB-C **data-capable** cable and the Waveshare knob.
-- Chrome or Edge for [Espressif's browser-based ESP Tool](https://espressif.github.io/esptool-js/). No host installation of ESP-IDF, Arduino IDE, PlatformIO, Python, or esptool is necessary.
-- **MTG Tracker Desktop v0.3 or later** for the separate deck-profile synchronization step.
+## Windows 11 / VS Code — everyday build
 
-**Deployment has three separate operations:** (1) build firmware in Docker, (2) flash firmware once using the browser, then (3) push deck profiles using the desktop application. **Building does not flash the device; syncing profiles does not update firmware.**
+Prerequisites: VS Code with the **Espressif IDF** extension already configured for **ESP-IDF v6.1**, and this repo cloned. You can reuse the very same ESP-IDF installation you use for your GC8 gauge. The MTG knob is a **different board/project**; nothing in the GC8 repository needs to be changed.
 
-## 1. Build the firmware in Docker
+1. Open this folder in VS Code: `C:\Users\User\Projects\mtg-tracker` (adjust if you cloned elsewhere).
+2. Press **Ctrl+Shift+P**, run **ESP-IDF: Open ESP-IDF Terminal**. **Do not use ordinary PowerShell or Git Bash**: they will not have the ESP-IDF environment configured.
+3. In that new ESP-IDF terminal, run **`build.bat`** (or `.\build.bat` if it is a PowerShell terminal).
+4. Wait for the build to finish. **Do not flash if the build fails.** Copy the **first actual error** and last 20–30 output lines if troubleshooting is needed.
 
-Open **PowerShell** in your existing `mtg-tracker` repository, then run:
+After a successful build, connect the MTG Waveshare by USB-C, select the correct **ESP32-S3** COM port and **UART** flashing method in the ESP-IDF extension, then run **ESP-IDF: Flash Your Project**. After flashing, run **ESP-IDF: Monitor Device** to inspect boot logs. Exit the monitor with **Ctrl+]**.
 
-```powershell
-git pull
-docker build -t mtg-tracker-firmware .
-docker run --rm -v "${PWD}:/src" -w /src mtg-tracker-firmware
-```
+**That's the entire workflow: open ESP-IDF terminal → `build.bat` → Flash Your Project → Monitor Device.**
 
-If you have not cloned the firmware repository, first run:
+You do not need to build a separate `.bin` with Docker or run Espressif's browser-based flashing tool. The ESP-IDF extension uses the app, partition table and bootloader from **this project's own ESP-IDF build**.
 
-```powershell
-git clone git@github.com:JohnathanKong/mtg-tracker.git
-cd mtg-tracker
-```
+### First build after switching from the old PlatformIO prototype
 
-The Docker container installs the compiler and dependencies **inside the container**, compiles for ESP32-S3 with PlatformIO, and merges the bootloader, partition table, OTA bootstrap, and application into one flashable image. Nothing is installed on the Windows host.
+Do this **once**, before building the converted project:
 
-**Expected success output** looks similar to:
+1. Stop running builds and serial monitors.
+2. Run `git pull` in the MTG project folder.
+3. If the project root contains `sdkconfig` from an unrelated ESP-IDF setup, rename it to `sdkconfig.backup`. (The previous PlatformIO version normally did not create one.)
+4. **Delete only the generated root `build` directory from the old firmware build**, if present. Do not delete your project source, deck profiles, or other directories. The root `build` folder is generated and will be recreated by ESP-IDF.
+5. In VS Code open **ESP-IDF: Open ESP-IDF Terminal**, then run `build.bat`. If `sdkconfig` does not exist, the script selects **esp32s3**, loads `sdkconfig.defaults`, and generates a fresh configuration.
 
-```text
-===================== [SUCCESS] =====================
-Wrote ... bytes to file build/MTG-Tracker-ESP32S3-full-flash.bin, ready to flash to offset 0x0
-Combined browser flash image: build/MTG-Tracker-ESP32S3-full-flash.bin
-```
+This is comparable to the first-build cleanup you already did for the GC8 gauge. After this, you only need `git pull` and `build.bat` for normal development.
 
-Find the files here relative to the firmware repository:
+## Connect the correct processor before flashing
 
-| File | Purpose |
-| --- | --- |
-| `build/MTG-Tracker-ESP32S3-full-flash.bin` | **Use this for initial browser flashing**, at address `0x0`. Complete merged image. |
-| `build/firmware.bin` | Application only. **Do not** flash at `0x0`. |
-| `.pio/build/waveshare-knob-s3/` | Intermediate bootloader, partitions, ELF and other PlatformIO files. |
+This Waveshare knob has **two processors**: **ESP32-S3R8** (our MTG firmware target) and **ESP32-U4WDH** (a separate ESP32). Waveshare routes its reversible USB-C connector to different download channels depending on insertion orientation.
 
-Alternatively, use the [firmware GitHub Actions builds](https://github.com/JohnathanKong/mtg-tracker/actions): open the latest **successful** run, download the `MTG-Tracker-ESP32S3-firmware` artifact, and extract the ZIP to find the same **full-flash** image. The CI job compiles inside Docker and verifies the merged file exists.
+1. Use a **data-capable USB-C cable**.
+2. Find the COM port under Windows **Device Manager → Ports (COM & LPT)**.
+3. In the ESP-IDF VS Code extension choose the MTG COM port and target **esp32s3**, **UART** flashing mode.
+4. If you reach the wrong processor or flashing fails, disconnect USB, rotate the USB-C plug **180°**, reconnect, and confirm **ESP32-S3**. If required, use the **ESP32-S3 BOOT** button while connecting power to enter download mode.
 
-## 2. Flash using your existing VS Code ESP-IDF installation (recommended)
+**Never flash unless the connected chip is ESP32-S3.** Disconnect your GC8 gauge or other ESP32 boards while setting up the port to avoid accidentally selecting the wrong device. Flashing replaces the S3's existing program.
 
-If you already have ESP-IDF installed for another ESP32 project, **reuse its
-`esptool` utility**. The MTG firmware stays Arduino/PlatformIO-built in Docker;
-ESP-IDF is used here **only to upload the combined image**. There is no need
-to rebuild the project in ESP-IDF and no need to use the web browser.
+## After flashing: synchronize from the desktop application
 
-1. In VS Code, open the Command Palette and select
-   **ESP-IDF: Open ESP-IDF Terminal**. This activates the existing ESP-IDF
-   Python environment and flashing tools.
-2. Disconnect any other ESP boards (including your GC8 gauge). Connect the
-   **MTG Waveshare knob** by USB-C and identify its COM port in Windows Device
-   Manager. Plug orientation determines which onboard processor is addressed.
-3. From the ESP-IDF terminal, change into the MTG firmware repo:
+Firmware flashing and deck synchronization are separate operations.
 
-   ```powershell
-   cd C:\Users\User\Projects\mtg-tracker
-   python -m esptool version
-   ```
-
-4. If esptool reports **v5**, use the following, replacing `COMx` with the
-   actual knob port:
-
-   ```powershell
-   python -m esptool --chip esp32s3 --port COMx --baud 460800 write-flash 0x0 .\build\MTG-Tracker-ESP32S3-full-flash.bin
-   ```
-
-   If the installed esptool is **v4**, its command name is `write_flash`:
-
-   ```powershell
-   python -m esptool --chip esp32s3 --port COMx --baud 460800 write_flash 0x0 .\build\MTG-Tracker-ESP32S3-full-flash.bin
-   ```
-
-5. Confirm the connected chip is **ESP32-S3**, not the secondary ESP32. If
-   the chip identification is wrong, **stop**; reverse the USB-C plug and
-   reconnect. If the device cannot enter bootloader mode automatically, use
-   the ESP32-S3 BOOT button following Waveshare's instructions.
-6. On successful upload, reset/power-cycle the device and continue to
-   **Step 3 — Send your decks** below.
-
-**Do not run `idf.py flash` in the GC8 project or in this PlatformIO repo.**
-`idf.py flash` uses the active ESP-IDF project's own build files; here we
-are uploading the specifically named **MTG combined image** with `esptool`.
-The combined image contains a partition table and replaces the factory S3
-firmware; the display may be blank until we build the touchscreen UI.
-
-### Browser-based alternative (when ESP-IDF is not installed)
-
-The official Espressif browser tool is an optional way to upload the same
-image without installing development tools. Use the instructions below.
-
-#### Browser flashing instructions
-
-**Before flashing:** the Waveshare contains an **ESP32-S3 and a separate ESP32**. The reversible USB-C connection selects different programming channels depending on insertion orientation. Never flash unless the browser positively identifies **ESP32-S3**. [Waveshare's instructions and FAQ](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) cover the connector and BOOT procedure.
-
-1. Connect the knob using the data-capable USB-C cable. In **Windows Device Manager → Ports (COM & LPT)**, identify its COM port. You may see a different COM number after reconnecting.
-2. Open **[Espressif ESP Tool](https://espressif.github.io/esptool-js/)** in Chrome or Edge. Use the **serial port** connection. For a typical Windows COM port, leave the optional **WebUSB (CH340)** checkbox off.
-3. Click **Connect** and choose the knob's COM port. **Confirm the chip is detected as ESP32-S3**. If it reports plain ESP32, fails to connect, or the wrong COM port appears, disconnect the cable, reverse the USB-C plug **180°**, and reconnect. Check the detected chip again.
-4. If the S3 cannot enter download mode, disconnect USB, **hold the ESP32-S3R8 BOOT button**, reconnect power while holding it, then release BOOT. Retry Connect. This is the S3 BOOT button, not the secondary ESP32's.
-5. In the **Program** section of ESP Tool, add the file `build/MTG-Tracker-ESP32S3-full-flash.bin` and set its **Flash Address to `0x0`**. This is one combined image; you do **not** need separate bootloader/partition offsets.
-6. Select **16 MB** flash size (the board has 16 MB). Keep **Erase all off** for the normal procedure; erase-all removes stored data. If an incompatible old partition layout prevents booting, investigate recovery/erasure separately rather than blindly erasing.
-7. Click **Program** and confirm the operation finishes successfully. Disconnect the browser from the COM port, then power-cycle the knob.
-
-**Expected after flashing:** the display may appear blank. That is normal for this milestone because **we have not implemented the device's visual interface**. A successfully flashed image is not proof that serial syncing works; that needs a real-device test.
-
-**Important:** The combined image writes the S3 bootloader, partition table, and application. Do not use it on the secondary ESP32, and do not flash the app-only `firmware.bin` at `0x0`.
-
-## 3. Send your decks from MTG Tracker Desktop
-
-After the receiver firmware is installed:
-
-1. Close ESP Tool's serial connection (and any serial monitor) so the COM port is free.
+1. Close the ESP-IDF **Monitor Device** terminal, which holds the COM port open.
 2. Open **MTG Tracker Desktop → Device Sync**.
-3. Click **Refresh**, choose the ESP32-S3 COM port, and click **Sync Deck Library**.
-4. The desktop sends a handshake and acknowledged data chunks. It reports success only after the device validates the CRC and confirms the library is stored.
-5. The device saves the deck profiles to its own internal flash. You can disconnect the desktop afterward; device UI/gameplay is a later milestone.
+3. Click **Refresh** and select the ESP32-S3 COM port.
+4. Click **Sync Deck Library**.
+5. A successful transfer requires the device to acknowledge the checksum and saved profile count. The device stores deck data in flash and can be disconnected afterward.
 
-**Currently transferred:** deck name, commander name, colors, built-in tracker selections, custom tracker IDs and names. **Not transferred:** commander images, deck-list links, current life/counter values, or firmware updates. The desktop refuses an empty deck library to reduce accidental clearing.
+**Transferred now:** deck and commander names, mana-color identity, selected counters, named custom trackers. **Not yet transferred:** commander images, deck-list URLs, live life totals/counters, or firmware updates.
+
+The first hardware test may expose UART/USB routing issues; the protocol and firmware have not been verified on your physical unit yet.
 
 ## Troubleshooting
 
-| Symptom | What to check |
+| Symptom | Action |
 | --- | --- |
-| Docker reports success but the knob did not change | Expected. **Build ≠ flash**; perform step 2. |
-| No COM port or the wrong ESP32 detected | Use a data cable, reverse USB-C plug 180°, and reconnect. Confirm **ESP32-S3** before proceeding. |
-| Browser cannot access serial port | Close MTG Tracker Desktop/serial monitor or another browser tab using that COM port. Use Chrome/Edge. |
-| Cannot enter flash/download mode | Hold the **ESP32-S3 BOOT** button while reconnecting USB. Follow the Waveshare recovery documentation. |
-| Firmware flashes but screen stays blank | Expected with the **headless receiver**; display and knob firmware is not yet implemented. |
-| Device Sync times out / no READY response | Verify the S3 firmware was flashed, choose the correct COM port, close ESP Tool, and reconnect. **USB serial behavior is not yet hardware-tested**; record the COM number and error for debugging. |
-| Need the original display back | Restore the Waveshare **factory firmware** for this exact board using the vendor's documented procedure. Do not use GC8 gauge or secondary-ESP32 firmware. |
-| `firmware.bin` rejected or wrong boot address | Use **`MTG-Tracker-ESP32S3-full-flash.bin` at `0x0`**, not the app-only binary. |
+| `ERROR: ESP-IDF environment is not active` | Open **ESP-IDF: Open ESP-IDF Terminal** in VS Code, not a normal shell. |
+| Build shows stale files or old PlatformIO output | Delete the generated root `build` folder once and rebuild. |
+| The wrong chip or COM port is selected | Disconnect other ESP32 boards; flip the knob's USB-C plug 180°; select **ESP32-S3**. |
+| Flash/download mode cannot be entered | Hold the **ESP32-S3 BOOT** button while reconnecting USB as documented by Waveshare. |
+| Screen is blank after flashing | Expected: **display and knob controls aren't built yet**. |
+| Device Sync cannot open the COM port | Exit **Monitor Device**, any serial terminal, and anything else using that port. |
+| Sync reports no reply or times out | Check that MTG firmware, not Waveshare factory software, was flashed to the **ESP32-S3**; confirm USB orientation and COM port. Hardware testing is still pending. |
+| Want the factory interface back | Use Waveshare's factory firmware for **this exact knob** and its recovery instructions. |
 
-## Updating firmware later
+### Storage compatibility warning
 
-Repeat **Build** and **Flash** for a new firmware version. **Device Sync** only transfers data; it cannot flash a firmware update. Changing flash partitions or using erase-all can destroy the saved profile library, so do not assume it will survive a future firmware update. We can add backup/export or OTA upgrading in a later milestone.
+The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-IDF conversion uses built-in **SPIFFS** in the storage partition. On first boot, a non-SPIFFS partition may be formatted, so **any deck data previously saved on the device may be lost**. Desktop deck profiles are stored separately and are not affected. Treat the first ESP-IDF flash as a migration; it is **not a guaranteed in-place upgrade**.
 
-## Technical reference
+## Project structure
 
-- **Target:** Waveshare ESP32-S3-Knob-Touch-LCD-1.8, 16 MB flash.
-- **Build:** PlatformIO + Arduino/ESP32 in Docker (`platformio.ini`, `Dockerfile`).
-- **Flash image:** `scripts/create-factory-bin.sh` merges into one file at offset `0x0`.
-- **Sync transport:** 115200 baud serial; current firmware targets S3 UART0 via the onboard USB connection, **pending physical confirmation**.
-- **Persistence:** LittleFS partition with staged write, CRC/schema verification, and backup.
-- **Wire protocol:** [docs/sync-protocol-v1.md](docs/sync-protocol-v1.md).
-- **Vendor hardware/flashing guide:** [Waveshare wiki](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8).
-- **Flashing software:** [Espressif ESP Tool](https://espressif.github.io/esptool-js/).
+| Path | Purpose |
+| --- | --- |
+| `build.bat` | One-command build from an ESP-IDF terminal. |
+| `CMakeLists.txt`, `main/CMakeLists.txt` | ESP-IDF application configuration. |
+| `sdkconfig.defaults` | ESP32-S3, 16 MB flash, UART and partition defaults. |
+| `partitions.csv` | NVS, OTA application slots and SPIFFS storage. |
+| `main/mtg_receiver.cpp` | Native ESP-IDF UART receiver, JSON validation and flash persistence. |
+| `main/idf_component.yml` | ESP-IDF-managed cJSON dependency. |
+| `docs/sync-protocol-v1.md` | Desktop/device USB handshake and deck JSON format. |
+| `.github/workflows/build.yml` | ESP-IDF v6.1 compilation in GitHub Actions. |
 
-**The GC8 gauge is a separate project and is not involved in this build or deployment process.**
+The firmware uses the same **MTG1** deck-sync protocol as the desktop app. It validates each block, CRC-32, and JSON before replacing previously saved profiles. No Wi-Fi, NFC or additional external hardware is required for this stage.
+
+**GC8 remains separate and untouched.** This repository's `build.bat`, firmware and flash settings apply only to your MTG knob.
