@@ -278,7 +278,8 @@ bool mtg_display_init() {
     if (!check(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO), "QSPI bus"))
         return false;
 
-    auto ioConfig = SH8601_PANEL_IO_QSPI_CONFIG(kCs, onColorDone, gTransferDone);
+    const esp_lcd_panel_io_spi_config_t ioConfig =
+        SH8601_PANEL_IO_QSPI_CONFIG(kCs, onColorDone, gTransferDone);
     if (!check(esp_lcd_new_panel_io_spi(
         reinterpret_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &ioConfig, &gIo),
         "SH8601 QSPI panel IO"))
