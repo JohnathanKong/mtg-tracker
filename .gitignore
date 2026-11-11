@@ -1,6 +1,8 @@
 build/
 sdkconfig
 sdkconfig.old
+sdkconfig.pre-display-backup
+sdkconfig.backup
 managed_components/
 .pio/
 .vscode/
