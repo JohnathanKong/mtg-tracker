@@ -95,7 +95,7 @@ Firmware flashing and deck synchronization are separate operations.
 
 **Transferred now:** deck and commander names, mana-color identity, selected counters, named custom trackers. **Not yet transferred:** commander images, deck-list URLs, live life totals/counters, or firmware updates.
 
-The first hardware test may expose UART/USB routing issues; the protocol and firmware have not been verified on your physical unit yet.
+The receiver now uses the ESP32-S3 **native USB Serial/JTAG** driver, which matches the S3's COM port on this Waveshare. Initial real-device handshake and transfer still require hardware validation.
 
 ## Troubleshooting
 
@@ -124,7 +124,7 @@ The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-I
 | `CMakeLists.txt`, `main/CMakeLists.txt` | ESP-IDF application configuration. |
 | `sdkconfig.defaults` | ESP32-S3, 16 MB flash, UART and partition defaults. |
 | `partitions.csv` | NVS, OTA application slots and SPIFFS storage. |
-| `main/mtg_receiver.cpp` | Native ESP-IDF UART receiver, JSON validation and flash persistence. |
+| `main/mtg_receiver.cpp` | Native ESP-IDF USB Serial/JTAG receiver, JSON validation and flash persistence. |
 | `main/mtg_display.cpp`, `.h` | Round 360×360 SH8601 QSPI display, PWM backlight, original text/status renderer. |
 | `main/panel_init_commands.h` | SH8601 panel power-up sequence adapted from an Apache-2.0 hardware reference; see `THIRD_PARTY_NOTICES.md`. |
 | `main/idf_component.yml` | ESP-IDF-managed cJSON dependency. |
@@ -132,6 +132,8 @@ The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-I
 | `.github/workflows/build.yml` | ESP-IDF v6.1 compilation in GitHub Actions. |
 
 **What appears on the display:** `MTG TRACKER`, `READY TO SYNC`, `DECKS STORED: 0`, and connection guidance. When data arrives it changes to `RECEIVING` with progress; then `SYNC COMPLETE` or `SYNC FAILED` with a reason. The on-device status display is designed to keep working without the desktop. It is a diagnostic UI, not yet the deck picker/gameplay interface.
+
+**USB routing:** On this dual-MCU Waveshare, the ESP32-S3 USB-C orientation exposes **native USB Serial/JTAG**, not UART0. The opposite orientation connects the secondary ESP32 through a USB-to-UART chip. Select the S3 port, and close ESP-IDF Monitor before using the desktop Sync page. If COM5 changes after reflashing or reconnecting, refresh the port list.
 
 **Display hardware:** 360×360 round SH8601 panel over QSPI using GPIO 13–18 and 21, with GPIO47 PWM brightness. The firmware uses PSRAM and Espressif's managed `esp_lcd_sh8601` driver, not a web browser or an additional host toolchain. The first physical LCD test is still pending.
 
