@@ -15,6 +15,7 @@ struct MtgGameView {
     char commander[64]{};
     char deckId[96]{};
     bool hasArtwork = false;
+    uint32_t artworkRevision = 0;
 };
 
 void mtg_game_start();
