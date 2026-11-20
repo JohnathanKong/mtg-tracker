@@ -338,11 +338,11 @@ void drawDashboard(const MtgGameView &view) {
     const int nextTax = view.casts * 2;
     printAt(180, 260, "COMMANDER", 1, kGold);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    printAt(155, 280, number, 3, castsInk);
-    printAt(112, 292, "CASTS", 1, castsInk);
+    printAt(155, 275, number, 3, castsInk);
+    printAt(112, 302, "CASTS", 1, castsInk);
     std::snprintf(number, sizeof(number), "+%d", nextTax);
-    printAt(259, 280, number, 2, castsInk);
-    printAt(221, 292, "TAX", 1, castsInk);
+    printAt(259, 278, number, 2, castsInk);
+    printAt(221, 302, "TAX", 1, castsInk);
 
     // Keep the on-device UI legible even with long user-defined deck names.
     char deck[31]{};
