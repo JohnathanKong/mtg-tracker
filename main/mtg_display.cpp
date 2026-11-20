@@ -41,6 +41,7 @@ uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // 180x180 RGB565 user-supplied commander art
 uint8_t *gSkin = nullptr;      // original fantasy overlay, indexed 120x120
 char gLoadedArtId[96] = {};
+uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
 extern "C" const uint8_t skin_start[] asm("_binary_ui_skin_lz4_start");
 extern "C" const uint8_t skin_end[] asm("_binary_ui_skin_lz4_end");
@@ -146,7 +147,9 @@ uint32_t crcDeckId(const char *s) {
 }
 
 void loadArtFor(const MtgGameView &view) {
-    if (std::strcmp(gLoadedArtId, view.deckId) == 0) return;
+    if (std::strcmp(gLoadedArtId, view.deckId) == 0 &&
+        gLoadedArtRevision == view.artworkRevision) return;
+    gLoadedArtRevision = view.artworkRevision;
     std::snprintf(gLoadedArtId, sizeof(gLoadedArtId), "%s", view.deckId);
     gHasArt = false;
     if (!gArt || !view.deckId[0]) return;
