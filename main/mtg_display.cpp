@@ -81,6 +81,8 @@ constexpr uint16_t kGreen    = color(140, 221, 166);
 constexpr uint16_t kRed      = color(238, 140, 131);
 constexpr uint16_t kTrack    = color(53, 69, 81);
 
+inline void pixel(int x, int y, uint16_t ink);
+
 // Indexed palette of our original, image-generated fantasy dashboard asset.
 // Artwork source in the repo: main/ui_skin.lz4. NOT a procedural wireframe.
 constexpr uint8_t kPalette[16][3] = {
