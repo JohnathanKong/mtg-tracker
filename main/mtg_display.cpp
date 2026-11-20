@@ -372,7 +372,8 @@ bool mtg_display_init() {
     // Never initialize the LCD synchronously from app_main. Full LCD
     // initialization and DMA flushes can block. The USB sync receiver
     // must be serviced independently, even if the screen is broken.
-    return xTaskCreate(displayTask, "mtg_lcd", 10240, nullptr, 3, nullptr)
+    return xTaskCreate(displayTask, "mtg_lcd", 10240, nullptr,
+                       tskIDLE_PRIORITY + 1, nullptr)
            == pdPASS;
 }
 
