@@ -95,7 +95,7 @@ Firmware flashing and deck synchronization are separate operations.
 
 **Transferred now:** deck and commander names, mana-color identity, selected counters, named custom trackers. **Not yet transferred:** commander images, deck-list URLs, live life totals/counters, or firmware updates.
 
-The receiver now uses the ESP32-S3 **native USB Serial/JTAG** driver, which matches the S3's COM port on this Waveshare. Initial real-device handshake and transfer still require hardware validation.
+The receiver uses the ESP32-S3 **native USB Serial/JTAG** driver, which matches the S3's COM port on this Waveshare. **It starts before LCD initialization**, and the SH8601 screen now renders on a separate lower-priority task: a failed panel should no longer block `MTG1 HELLO` or deck transfers. Successful flashing only confirms USB bootloader access; app-to-desktop communications and screen output still require hardware testing.
 
 ## Troubleshooting
 
