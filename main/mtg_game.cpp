@@ -49,6 +49,7 @@ volatile TickType_t gLastEdgeCw = 0, gLastEdgeCcw = 0;
 std::atomic<bool> gReloadPending{false};
 uint32_t gArtworkRevision = 0;
 bool gDirty = false;
+int gActiveDeckIndex = -1; // Separate from picker preview index.
 int64_t gLastChange = 0;
 i2c_master_bus_handle_t gI2c = nullptr;
 i2c_master_dev_handle_t gTouch = nullptr;
@@ -68,17 +69,17 @@ void nvsKey(char key[16], const std::string &id) {
 }
 
 void writeState() {
-    if (gDecks.empty() || gView.deckIndex < 0 ||
-        gView.deckIndex >= int(gDecks.size())) return;
+    if (gDecks.empty() || gActiveDeckIndex < 0 ||
+        gActiveDeckIndex >= int(gDecks.size())) return;
     nvs_handle_t handle;
     if (nvs_open("mtg_game", NVS_READWRITE, &handle) != ESP_OK) return;
     char key[16];
-    nvsKey(key, gDecks[size_t(gView.deckIndex)].id);
+    nvsKey(key, gDecks[size_t(gActiveDeckIndex)].id);
     const Saved save{0x4D544731, gView.life, gView.poison, gView.rad,
                      gView.damage, gView.casts, gView.deaths};
     esp_err_t err = nvs_set_blob(handle, key, &save, sizeof(save));
     if (err == ESP_OK)
-        err = nvs_set_str(handle, "active", gDecks[size_t(gView.deckIndex)].id.c_str());
+        err = nvs_set_str(handle, "active", gDecks[size_t(gActiveDeckIndex)].id.c_str());
     if (err == ESP_OK) err = nvs_commit(handle);
     nvs_close(handle);
     if (err == ESP_OK) gDirty = false;
@@ -115,6 +116,7 @@ void publish() {
 void selectDeck(int index) {
     if (index < 0 || index >= int(gDecks.size())) return;
     if (gDirty) writeState();
+    gActiveDeckIndex = index;
     gView.deckIndex = index;
     gView.deckCount = int(gDecks.size());
     const DeckMeta &deck = gDecks[size_t(index)];
@@ -165,6 +167,7 @@ bool loadDecksFromFlash() {
     if (gDecks.empty()) {
         gView = MtgGameView{};
         gView.deckCount = 0;
+        gActiveDeckIndex = -1;
         gView.screen = MtgScreen::ChooseDeck;
         publish();
         return true;
