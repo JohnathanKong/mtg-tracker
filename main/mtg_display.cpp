@@ -37,7 +37,6 @@ esp_lcd_panel_handle_t gPanel = nullptr;
 SemaphoreHandle_t gTransferDone = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
-bool gReady = false;
 
 // All USB callbacks update only this small pending status, never the LCD
 // itself. The LCD has its own task, so failed SPI initialization or a stalled
@@ -329,7 +328,6 @@ bool initDisplayHardware() {
         !check(esp_lcd_panel_disp_on_off(gPanel, true), "Panel display on"))
         return false;
 
-    gReady = true;
     // Light the panel before attempting a frame transfer so the backlight
     // is visible even when the SPI transfer path isn't functioning.
     setBacklight(210);
@@ -362,7 +360,6 @@ void displayTask(void *) {
         }
         vTaskDelay(pdMS_TO_TICKS(40));
     }
-    gReady = false;
     vTaskDelete(nullptr);
 }
 
