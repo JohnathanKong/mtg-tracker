@@ -24,6 +24,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 namespace {
 constexpr char kTag[] = "mtg_display";
@@ -37,6 +38,20 @@ SemaphoreHandle_t gTransferDone = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 bool gReady = false;
+
+// All USB callbacks update only this small pending status, never the LCD
+// itself. The LCD has its own task, so failed SPI initialization or a stalled
+// frame transfer cannot prevent USB handshakes / flash sync.
+struct PendingStatus {
+    MthStatus state = MthStatus::Booting;
+    int decks = 0;
+    int percent = 0;
+    char detail[32] = {};
+    uint32_t generation = 1;
+};
+portMUX_TYPE gStatusLock = portMUX_INITIALIZER_UNLOCKED;
+PendingStatus gPending;
+
 
 constexpr uint16_t color(unsigned red, unsigned green, unsigned blue) {
     // SH8601 reads RGB565 pixels MSB first. The framebuffer holds the values
@@ -252,9 +267,7 @@ bool present() {
     return true;
 }
 
-} // namespace
-
-bool mtg_display_init() {
+bool initDisplayHardware() {
     ESP_LOGI(kTag, "Initialize 360x360 SH8601 status display");
 
     gTransferDone = xSemaphoreCreateBinary();
@@ -317,18 +330,66 @@ bool mtg_display_init() {
         return false;
 
     gReady = true;
-    mtg_display_show(MthStatus::Booting, 0);
-    setBacklight(220);
-    ESP_LOGI(kTag, "MTG status display ready");
+    // Light the panel before attempting a frame transfer so the backlight
+    // is visible even when the SPI transfer path isn't functioning.
+    setBacklight(210);
+    ESP_LOGI(kTag, "MTG status LCD hardware initialized");
     return true;
+}
+
+void displayTask(void *) {
+    if (!initDisplayHardware()) {
+        ESP_LOGE(kTag, "LCD initialization failed; USB receiver remains active");
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    uint32_t drawnGeneration = 0;
+    while (true) {
+        PendingStatus snapshot;
+        taskENTER_CRITICAL(&gStatusLock);
+        snapshot = gPending;
+        taskEXIT_CRITICAL(&gStatusLock);
+
+        if (snapshot.generation != drawnGeneration) {
+            drawState(snapshot.state, snapshot.decks, snapshot.percent,
+                      snapshot.detail);
+            if (!present()) {
+                ESP_LOGE(kTag, "LCD transfer failed; USB sync remains active");
+                break;
+            }
+            drawnGeneration = snapshot.generation;
+        }
+        vTaskDelay(pdMS_TO_TICKS(40));
+    }
+    gReady = false;
+    vTaskDelete(nullptr);
+}
+
+} // namespace
+
+bool mtg_display_init() {
+    // Never initialize the LCD synchronously from app_main. Full LCD
+    // initialization and DMA flushes can block. The USB sync receiver
+    // must be serviced independently, even if the screen is broken.
+    return xTaskCreate(displayTask, "mtg_lcd", 10240, nullptr, 3, nullptr)
+           == pdPASS;
 }
 
 void mtg_display_show(MthStatus state, int storedDecks, int percent,
                       const char *detail) {
-    if (!gReady) return;
-    drawState(state, storedDecks, percent, detail);
-    if (!present()) {
-        ESP_LOGE(kTag, "Display update failed; serial sync remains available");
-        gReady = false;
+    // This function is deliberately nonblocking so even progress updates
+    // can't hold up the USB receive loop.
+    taskENTER_CRITICAL(&gStatusLock);
+    gPending.state = state;
+    gPending.decks = storedDecks;
+    gPending.percent = percent;
+    if (detail) {
+        std::strncpy(gPending.detail, detail, sizeof(gPending.detail) - 1);
+        gPending.detail[sizeof(gPending.detail) - 1] = '\0';
+    } else {
+        gPending.detail[0] = '\0';
     }
+    ++gPending.generation;
+    taskEXIT_CRITICAL(&gStatusLock);
 }
