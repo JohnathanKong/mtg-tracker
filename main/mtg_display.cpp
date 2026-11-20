@@ -130,7 +130,7 @@ bool decodeSkin() {
         match += 4;
         if (size_t(outEnd - out) < match) return false;
         for (size_t i = 0; i < match; ++i)
-            out[i] = out[i - distance];
+            *(out + i) = *(out + i - distance);
         out += match;
     }
     return out == outEnd;
