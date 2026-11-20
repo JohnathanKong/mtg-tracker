@@ -8,10 +8,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cinttypes>
 #include <cstring>
 #include <string>
 
 #include "mtg_display.h"
+#include "mtg_game.h"
 #include "cJSON.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_err.h"
@@ -33,6 +35,14 @@ constexpr char kFolder[] = "/mtg";
 constexpr char kLive[] = "/mtg/decks.json";
 constexpr char kTemp[] = "/mtg/decks.tmp";
 constexpr char kBackup[] = "/mtg/decks.bak";
+constexpr size_t kArtworkBytes = 180 * 180 * 2;
+enum class TransferKind { None, Library, Artwork };
+TransferKind transferKind = TransferKind::None;
+char artId[9] = {};
+char artStaging[40] = {};
+char artTarget[40] = {};
+char artBackup[40] = {};
+
 
 bool storageReady = false;
 bool receiving = false;
@@ -84,7 +94,14 @@ void abortTransfer() {
         std::fclose(staging);
         staging = nullptr;
     }
-    if (storageReady) std::remove(kTemp);
+    if (storageReady) {
+        if (transferKind == TransferKind::Artwork && artStaging[0])
+            std::remove(artStaging);
+        else
+            std::remove(kTemp);
+    }
+    transferKind = TransferKind::None;
+    artId[0] = artStaging[0] = artTarget[0] = artBackup[0] = '\0';
     receiving = false;
     expectedBytes = 0;
     receivedBytes = 0;
@@ -206,6 +223,34 @@ void commitTransfer() {
         abortTransfer(); return;
     }
 
+    if (transferKind == TransferKind::Artwork) {
+        if (expectedBytes != kArtworkBytes) {
+            replyError("ART_SIZE");
+            abortTransfer();
+            return;
+        }
+        const bool previous = exists(artTarget);
+        std::remove(artBackup);
+        if (previous && std::rename(artTarget, artBackup) != 0) {
+            replyError("ART_BACKUP");
+            abortTransfer(); return;
+        }
+        if (std::rename(artStaging, artTarget) != 0) {
+            if (previous) std::rename(artBackup, artTarget);
+            replyError("ART_SAVE");
+            abortTransfer(); return;
+        }
+        char result[100];
+        std::snprintf(result, sizeof(result), "MTG1 ART STORED %s %08lX",
+                      artId, static_cast<unsigned long>(checksum));
+        reply(result);
+        transferKind = TransferKind::None;
+        receiving = false;
+        expectedBytes = receivedBytes = chunkRemaining = 0;
+        mtg_game_reload_decks();
+        return;
+    }
+
     int count = 0;
     if (!validSavedDocument(kTemp, count)) {
         replyError("SCHEMA");
@@ -235,6 +280,7 @@ void commitTransfer() {
                   count, static_cast<unsigned long>(checksum));
     reply(output);
     mtg_display_show(MthStatus::Complete, shownDeckCount);
+    mtg_game_reload_decks();
 }
 
 void processLine(const char *command) {
@@ -252,6 +298,37 @@ void processLine(const char *command) {
         return;
     }
 
+    if (std::strncmp(command, "MTG1 ART ", 9) == 0) {
+        if (!storageReady) { replyError("STORAGE"); return; }
+        if (receiving) { replyError("BUSY"); return; }
+        char id[9] = {}, hex[9] = {}, extra = '\0';
+        unsigned long size = 0;
+        if (std::sscanf(command, "MTG1 ART %8[0-9A-F] %lu %8[0-9A-F] %c",
+                        id, &size, hex, &extra) != 3 ||
+            std::strlen(id) != 8 || std::strlen(hex) != 8 ||
+            size != kArtworkBytes) {
+            replyError("ART_BEGIN"); return;
+        }
+        std::snprintf(artId, sizeof(artId), "%s", id);
+        std::snprintf(artStaging, sizeof(artStaging), "/mtg/a%s.tmp", id);
+        std::snprintf(artTarget, sizeof(artTarget), "/mtg/a%s.rgb", id);
+        std::snprintf(artBackup, sizeof(artBackup), "/mtg/a%s.bak", id);
+        transferKind = TransferKind::Artwork;
+        transferKind = TransferKind::Library;
+        expectedBytes = size;
+        receivedBytes = chunkRemaining = 0;
+        expectedCrc = static_cast<uint32_t>(std::strtoul(hex, nullptr, 16));
+        rollingCrc = 0xFFFFFFFFu;
+        std::remove(artStaging);
+        staging = std::fopen(artStaging, "wb");
+        if (!staging) { replyError("ART_STORAGE"); abortTransfer(); return; }
+        receiving = true;
+        lastByteAt = esp_timer_get_time();
+        lastProgressStep = 0;
+        reply("MTG1 OK");
+        mtg_display_show(MthStatus::Receiving, shownDeckCount, 0);
+        return;
+    }
     if (std::strncmp(command, "MTG1 BEGIN ", 11) == 0) {
         if (!storageReady) { replyError("STORAGE"); return; }
         if (receiving) { replyError("BUSY"); return; }
@@ -350,7 +427,7 @@ void setupStorage() {
     esp_vfs_spiffs_conf_t conf = {};
     conf.base_path = kFolder;
     conf.partition_label = "storage";
-    conf.max_files = 4;
+    conf.max_files = 12;
     // New units need an initial SPIFFS format. A previous Arduino/LittleFS
     // image, if ever flashed, is NOT storage-compatible with this firmware.
     conf.format_if_mount_failed = true;
@@ -387,6 +464,7 @@ extern "C" void app_main(void) {
     const bool lcdTaskStarted = mtg_display_init();
     setupStorage();
     shownDeckCount = storedDeckCount();
+    if (storageReady) mtg_game_start();
     mtg_display_show(storageReady ? MthStatus::Ready : MthStatus::StorageError,
                      shownDeckCount);
     ESP_LOGI("mtg", "MTG1 USB receiver ready, storage=%d, lcd_task=%d, decks=%d",
