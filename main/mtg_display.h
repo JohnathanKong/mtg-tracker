@@ -16,3 +16,6 @@ enum class MthStatus {
 bool mtg_display_init();
 void mtg_display_show(MthStatus state, int storedDecks, int percent = 0,
                       const char *detail = nullptr);
+
+// Gameplay/dashboard screen, rendered asynchronously by the LCD task.
+void mtg_display_showGame(const MtgGameView &view);
