@@ -46,6 +46,7 @@ portMUX_TYPE gViewLock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t gRotaryEvents = nullptr;
 volatile TickType_t gLastEdgeCw = 0, gLastEdgeCcw = 0;
 bool gReloadPending = false;
+uint32_t gArtworkRevision = 0;
 bool gDirty = false;
 int64_t gLastChange = 0;
 i2c_master_bus_handle_t gI2c = nullptr;
@@ -121,6 +122,7 @@ void selectDeck(int index) {
     std::snprintf(gView.commander, sizeof(gView.commander), "%s", deck.commander.c_str());
     gView.selected = MtgCounter::Life;
     gView.screen = MtgScreen::Dashboard;
+    gView.artworkRevision = gArtworkRevision;
     loadState(deck.id);
     gDirty = true; // Save active deck choice even if counters remain unchanged
     gLastChange = esp_timer_get_time();
@@ -143,6 +145,8 @@ bool loadDecksFromFlash() {
     const cJSON *arr = cJSON_GetObjectItemCaseSensitive(root, "decks");
     if (!cJSON_IsArray(arr)) { cJSON_Delete(root); return false; }
     const std::string previousId = gView.deckId;
+    ++gArtworkRevision;
+    gView.artworkRevision = gArtworkRevision;
     if (gDirty) writeState();
     gDecks.clear();
     const cJSON *item = nullptr;
