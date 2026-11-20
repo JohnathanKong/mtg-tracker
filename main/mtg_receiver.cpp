@@ -381,14 +381,16 @@ void setupSerial() {
 } // namespace
 
 extern "C" void app_main(void) {
-    const bool screenOk = mtg_display_init();
-    setupStorage();
+    // Native USB comes up FIRST. LCD bring-up runs on its own FreeRTOS task,
+    // so a stalled QSPI panel cannot prevent a MTG1 HELLO response.
     setupSerial();
+    const bool lcdTaskStarted = mtg_display_init();
+    setupStorage();
     shownDeckCount = storedDeckCount();
     mtg_display_show(storageReady ? MthStatus::Ready : MthStatus::StorageError,
                      shownDeckCount);
-    ESP_LOGI("mtg", "MTG1 sync receiver ready (ESP-IDF), storage=%d, lcd=%d, decks=%d",
-             int(storageReady), int(screenOk), shownDeckCount);
+    ESP_LOGI("mtg", "MTG1 USB receiver ready, storage=%d, lcd_task=%d, decks=%d",
+             int(storageReady), int(lcdTaskStarted), shownDeckCount);
 
     while (true) {
         uint8_t byte = 0;
