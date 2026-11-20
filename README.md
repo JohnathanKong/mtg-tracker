@@ -83,6 +83,35 @@ This Waveshare knob has **two processors**: **ESP32-S3R8** (our MTG firmware tar
 
 **Never flash unless the connected chip is ESP32-S3.** Disconnect your GC8 gauge or other ESP32 boards while setting up the port to avoid accidentally selecting the wrong device. Flashing replaces the S3's existing program.
 
+## On-device Commander dashboard (first playable milestone)
+
+The new firmware replaces the old diagnostic-only screen with a **round
+Always Track dashboard**, modeled on the approved dark-fantasy design. The
+visual skin is an **original generated graphical asset** embedded in
+\`main/ui_skin.lz4\` and displayed with your uploaded commander art behind it.
+
+The six visible counters are Life (starts at 40), Poison, Rad, Commander
+Damage, Commander Casts / Next-Cast Tax, and Commander Deaths. Next-cast
+commander tax is calculated as **2 × previous casts**, not manually stored.
+
+- **Tap** the counter you want to change. Its number becomes gold.
+- **Rotate the knob** clockwise/counterclockwise to increment/decrement it.
+- **Tap the crown at the top** to open deck selection.
+- **Rotate** to choose a different deck; **tap** to enter it.
+- Each deck has independent **persistent values saved in NVS**. Synchronizing
+  the deck library does **not** reset the game's current values.
+
+Touch uses the board's CST816D on I2C (GPIO11/12); the two knob rotation
+pulses use GPIO8 (clockwise) and GPIO7 (counterclockwise). They are not a
+quadrature pair. Physical knob/touch behavior and the graphical appearance
+still require first-on-device verification.
+
+**Current limits:** This first dashboard exposes one aggregate commander
+damage value (not per opposing commander); does not yet reset a game through
+the UI; and does not include deck-specific or per-turn mechanics.
+
+See [docs/device-ui-v1.md](docs/device-ui-v1.md) for the full UI specification.
+
 ## After flashing: synchronize from the desktop application
 
 Firmware flashing and deck synchronization are separate operations.
@@ -93,7 +122,7 @@ Firmware flashing and deck synchronization are separate operations.
 4. Click **Sync Deck Library**.
 5. A successful transfer requires the device to acknowledge the checksum and saved profile count. The device stores deck data in flash and can be disconnected afterward.
 
-**Transferred now:** deck and commander names, mana-color identity, selected counters, named custom trackers. **Not yet transferred:** commander images, deck-list URLs, live life totals/counters, or firmware updates.
+**Transferred now:** deck and commander names, mana-color identity, selected counters, named custom trackers, and **the deck's uploaded commander image** (center-cropped to 180×180 RGB565). Photos are CRC-verified and saved to device flash. **Not transferred:** deck-list URLs, live life totals/counters, or firmware updates. Gameplay values are saved locally on the ESP32-S3.
 
 The receiver uses the ESP32-S3 **native USB Serial/JTAG** driver, which matches the S3's COM port on this Waveshare. **It starts before LCD initialization**, and the SH8601 screen now renders on a separate lower-priority task: a failed panel should no longer block `MTG1 HELLO` or deck transfers. Successful flashing only confirms USB bootloader access; app-to-desktop communications and screen output still require hardware testing.
 
@@ -125,13 +154,15 @@ The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-I
 | `sdkconfig.defaults` | ESP32-S3, 16 MB flash, UART and partition defaults. |
 | `partitions.csv` | NVS, OTA application slots and SPIFFS storage. |
 | `main/mtg_receiver.cpp` | Native ESP-IDF USB Serial/JTAG receiver, JSON validation and flash persistence. |
-| `main/mtg_display.cpp`, `.h` | Round 360×360 SH8601 QSPI display, PWM backlight, original text/status renderer. |
+| `main/mtg_display.cpp`, `.h` | Round 360×360 SH8601 QSPI display, PWM backlight, graphical dashboard rendering. |
+| `main/mtg_game.cpp`, `.h` | Touch/knob input, deck selection and per-deck saved game-long counters. |
+| `main/ui_skin.lz4` | Original generated dark-fantasy panel artwork, compressed and embedded into the firmware. |
 | `main/panel_init_commands.h` | SH8601 panel power-up sequence adapted from an Apache-2.0 hardware reference; see `THIRD_PARTY_NOTICES.md`. |
 | `main/idf_component.yml` | ESP-IDF-managed cJSON dependency. |
 | `docs/sync-protocol-v1.md` | Desktop/device USB handshake and deck JSON format. |
 | `.github/workflows/build.yml` | ESP-IDF v6.1 compilation in GitHub Actions. |
 
-**What appears on the display:** `MTG TRACKER`, `READY TO SYNC`, `DECKS STORED: 0`, and connection guidance. When data arrives it changes to `RECEIVING` with progress; then `SYNC COMPLETE` or `SYNC FAILED` with a reason. The on-device status display is designed to keep working without the desktop. It is a diagnostic UI, not yet the deck picker/gameplay interface.
+**What appears on the display:** The Always Track dashboard for the active deck, including the commander art if synced. The firmware temporarily shows `RECEIVING` with progress and returns to gameplay after a successful profile/art sync. Deck selection and all six always-visible counters are now implemented; later gameplay mechanics are outside the first milestone.
 
 **USB routing:** On this dual-MCU Waveshare, the ESP32-S3 USB-C orientation exposes **native USB Serial/JTAG**, not UART0. The opposite orientation connects the secondary ESP32 through a USB-to-UART chip. Select the S3 port, and close ESP-IDF Monitor before using the desktop Sync page. If COM5 changes after reflashing or reconnecting, refresh the port list.
 
