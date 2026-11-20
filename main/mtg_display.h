@@ -1,4 +1,5 @@
 #pragma once
+#include "mtg_game.h"
 
 // Round 360 x 360 hardware status display for the Waveshare ESP32-S3 Knob.
 // Headless serial sync continues even if LCD initialization fails.
