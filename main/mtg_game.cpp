@@ -10,6 +10,7 @@
 #include "mtg_display.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -45,7 +46,7 @@ MtgGameView gView;
 portMUX_TYPE gViewLock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t gRotaryEvents = nullptr;
 volatile TickType_t gLastEdgeCw = 0, gLastEdgeCcw = 0;
-bool gReloadPending = false;
+std::atomic<bool> gReloadPending{false};
 uint32_t gArtworkRevision = 0;
 bool gDirty = false;
 int64_t gLastChange = 0;
@@ -325,8 +326,7 @@ void task(void *) {
     bool down = false;
     int touchX = 0, touchY = 0;
     while (true) {
-        if (gReloadPending) {
-            gReloadPending = false;
+        if (gReloadPending.exchange(false)) {
             loadDecksFromFlash();
         }
         int direction = 0;
@@ -355,7 +355,7 @@ void mtg_game_start() {
         ESP_LOGE(kTag, "Could not start game input task");
 }
 
-void mtg_game_reload_decks() { gReloadPending = true; }
+void mtg_game_reload_decks() { gReloadPending.store(true); }
 
 void mtg_game_view(MtgGameView &output) {
     taskENTER_CRITICAL(&gViewLock);
