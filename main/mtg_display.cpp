@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
@@ -37,6 +38,13 @@ esp_lcd_panel_handle_t gPanel = nullptr;
 SemaphoreHandle_t gTransferDone = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
+uint16_t *gArt = nullptr;       // 180x180 RGB565 user-supplied commander art
+uint8_t *gSkin = nullptr;      // original fantasy overlay, indexed 120x120
+char gLoadedArtId[96] = {};
+bool gHasArt = false;
+extern "C" const uint8_t skin_start[] asm("_binary_ui_skin_lz4_start");
+extern "C" const uint8_t skin_end[] asm("_binary_ui_skin_lz4_end");
+
 
 // All USB callbacks update only this small pending status, never the LCD
 // itself. The LCD has its own task, so failed SPI initialization or a stalled
@@ -47,6 +55,8 @@ struct PendingStatus {
     int percent = 0;
     char detail[32] = {};
     uint32_t generation = 1;
+    bool gameMode = false;
+    MtgGameView game{};
 };
 portMUX_TYPE gStatusLock = portMUX_INITIALIZER_UNLOCKED;
 PendingStatus gPending;
@@ -69,6 +79,122 @@ constexpr uint16_t kTeal     = color(108, 215, 184);
 constexpr uint16_t kGreen    = color(140, 221, 166);
 constexpr uint16_t kRed      = color(238, 140, 131);
 constexpr uint16_t kTrack    = color(53, 69, 81);
+
+// Indexed palette of our original, image-generated fantasy dashboard asset.
+// Artwork source in the repo: main/ui_skin.lz4. NOT a procedural wireframe.
+constexpr uint8_t kPalette[16][3] = {
+    {156,180,146}, {92,113,88}, {55,71,60}, {45,37,33},
+    {2,33,35}, {28,17,19}, {8,17,22}, {2,17,21},
+    {1,18,20}, {1,13,15}, {11,8,11}, {2,6,7},
+    {0,9,11}, {0,4,7}, {0,0,2}, {0,0,0}
+};
+
+// Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
+// The generated skin is 120x120 indexed pixels and scales 3x on the 360 LCD.
+bool decodeSkin() {
+    if (!gSkin) return false;
+    const uint8_t *src = skin_start;
+    const uint8_t *const end = skin_end;
+    uint8_t *out = gSkin;
+    uint8_t *const outEnd = gSkin + 120 * 120;
+    while (src < end) {
+        const uint8_t token = *src++;
+        size_t literal = token >> 4;
+        if (literal == 15) {
+            uint8_t extra = 0;
+            do {
+                if (src == end) return false;
+                extra = *src++;
+                literal += extra;
+            } while (extra == 255);
+        }
+        if (size_t(end - src) < literal ||
+            size_t(outEnd - out) < literal) return false;
+        std::memcpy(out, src, literal);
+        out += literal; src += literal;
+        if (src == end) break;
+        if (end - src < 2) return false;
+        const size_t distance = size_t(src[0]) | (size_t(src[1]) << 8);
+        src += 2;
+        if (distance == 0 || size_t(out - gSkin) < distance) return false;
+        size_t match = token & 0x0F;
+        if (match == 15) {
+            uint8_t extra = 0;
+            do {
+                if (src == end) return false;
+                extra = *src++;
+                match += extra;
+            } while (extra == 255);
+        }
+        match += 4;
+        if (size_t(outEnd - out) < match) return false;
+        for (size_t i = 0; i < match; ++i)
+            out[i] = out[i - distance];
+        out += match;
+    }
+    return out == outEnd;
+}
+
+uint32_t crcDeckId(const char *s) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (; *s; ++s) {
+        crc ^= static_cast<uint8_t>(*s);
+        for (int b = 0; b < 8; ++b)
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320u : 0u);
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
+
+void loadArtFor(const MtgGameView &view) {
+    if (std::strcmp(gLoadedArtId, view.deckId) == 0) return;
+    std::snprintf(gLoadedArtId, sizeof(gLoadedArtId), "%s", view.deckId);
+    gHasArt = false;
+    if (!gArt || !view.deckId[0]) return;
+    char path[48];
+    std::snprintf(path, sizeof(path), "/mtg/a%08lX.rgb",
+                  static_cast<unsigned long>(crcDeckId(view.deckId)));
+    FILE *file = std::fopen(path, "rb");
+    if (!file) return;
+    const size_t len = std::fread(gArt, sizeof(uint16_t), 180 * 180, file);
+    const int trailing = std::fgetc(file);
+    std::fclose(file);
+    gHasArt = len == 180 * 180 && trailing == EOF;
+    ESP_LOGI(kTag, "Deck art %s: %s", path, gHasArt ? "loaded" : "invalid");
+}
+
+// Palette skin is a real image asset, blended over the user-supplied commander
+// image; gold/cyan edges stay vivid while the center shows more commander art.
+void drawGameSkin() {
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            const int dx = x - 180, dy = y - 180;
+            if (dx*dx + dy*dy > 177*177) {
+                pixel(x, y, kBg);
+                continue;
+            }
+            const uint8_t index = gSkin ? gSkin[(y / 3) * 120 + (x / 3)] : 8;
+            const uint8_t *palette = kPalette[index < 16 ? index : 15];
+            int r = palette[0], g = palette[1], b = palette[2];
+            if (gHasArt) {
+                const uint16_t swapped = gArt[(y / 2) * 180 + (x / 2)];
+                const uint16_t rgb = uint16_t((swapped >> 8) | (swapped << 8));
+                const int photoR = ((rgb >> 11) & 31) * 255 / 31;
+                const int photoG = ((rgb >> 5) & 63) * 255 / 63;
+                const int photoB = (rgb & 31) * 255 / 31;
+                // Keep the artwork subtle under the HUD, most prominent in
+                // the center life panel and the gap above it.
+                const bool focus = ((dx*dx + (dy-5)*(dy-5) < 86*86) ||
+                                    (y < 106 && x > 142 && x < 218));
+                const int opacity = (r + g + b > 245) ? 242 : (focus ? 76 : 213);
+                r = (r*opacity + photoR*(255-opacity)*2/3)/255;
+                g = (g*opacity + photoG*(255-opacity)*2/3)/255;
+                b = (b*opacity + photoB*(255-opacity)*2/3)/255;
+            }
+            pixel(x, y, color(unsigned(r),unsigned(g),unsigned(b)));
+        }
+    }
+}
+
 
 struct Glyph { char c; uint8_t rows[7]; };
 // Original minimal 5x7 status font. Uppercase letters, digits and punctuation.
@@ -125,10 +251,10 @@ void borderBox(int x, int y, int w, int h, uint16_t border, uint16_t inside) {
     fillRect(x + 1, y + 1, w - 2, h - 2, inside);
 }
 
-void printCentered(int y, const char *value, int scale, uint16_t ink) {
+void printAt(int centerX, int y, const char *value, int scale, uint16_t ink) {
     const int len = int(std::strlen(value));
     const int textWidth = len * 6 * scale - scale;
-    const int start = (kWidth - textWidth) / 2;
+    const int start = centerX - textWidth / 2;
     for (int c = 0; c < len; ++c) {
         const uint8_t *rows = glyphFor(value[c]);
         const int baseX = start + c * 6 * scale;
@@ -140,6 +266,84 @@ void printCentered(int y, const char *value, int scale, uint16_t ink) {
             }
         }
     }
+}
+
+void printCentered(int y, const char *value, int scale, uint16_t ink) {
+    printAt(180, y, value, scale, ink);
+}
+
+void drawDashboard(const MtgGameView &view) {
+    loadArtFor(view);
+    drawGameSkin();
+
+    if (view.deckCount == 0) {
+        printCentered(154, "NO DECKS", 3, kIvory);
+        printCentered(201, "SYNC FROM DESKTOP", 1, kGold);
+        return;
+    }
+
+    if (view.screen == MtgScreen::ChooseDeck) {
+        printCentered(51, "SELECT DECK", 2, kGold);
+        // Translucent, deliberately dark central overlay on the art asset.
+        fillRect(59, 115, 242, 147, kBg);
+        char number[32];
+        std::snprintf(number, sizeof(number), "%d / %d",
+                      view.deckIndex + 1, view.deckCount);
+        printCentered(126, number, 2, kTeal);
+        char deck[25]{};
+        std::snprintf(deck, sizeof(deck), "%.21s", view.deckName);
+        printCentered(164, deck, 2, kIvory);
+        printCentered(220, "TAP TO PLAY", 2, kGold);
+        printCentered(286, "TURN KNOB TO CHOOSE", 1, kMuted);
+        return;
+    }
+
+    const uint16_t lifeInk = view.selected == MtgCounter::Life ? kGold : kIvory;
+    const uint16_t poisonInk = view.selected == MtgCounter::Poison ? kGold : kIvory;
+    const uint16_t radInk = view.selected == MtgCounter::Rad ? kGold : kIvory;
+    const uint16_t damageInk = view.selected == MtgCounter::Damage ? kGold : kIvory;
+    const uint16_t castsInk = view.selected == MtgCounter::Casts ? kGold : kIvory;
+    const uint16_t deathsInk = view.selected == MtgCounter::Deaths ? kGold : kIvory;
+
+    char number[24]{};
+    std::snprintf(number, sizeof(number), "%d", view.life);
+    int scale = std::strlen(number) > 3 ? 7 : (std::strlen(number) > 2 ? 9 : 12);
+    printCentered(132, number, scale, lifeInk);
+    printCentered(226, "LIFE", 2, lifeInk);
+
+    std::snprintf(number, sizeof(number), "%d", view.poison);
+    printAt(97, 85, number, 4, poisonInk);
+    printAt(97, 119, "POISON", 1, poisonInk);
+
+    std::snprintf(number, sizeof(number), "%d", view.rad);
+    printAt(263, 85, number, 4, radInk);
+    printAt(263, 119, "RAD", 1, radInk);
+
+    std::snprintf(number, sizeof(number), "%d", view.damage);
+    printAt(78, 177, number, 4, damageInk);
+    printAt(78, 215, "CMD", 1, damageInk);
+    printAt(78, 225, "DAMAGE", 1, damageInk);
+
+    std::snprintf(number, sizeof(number), "%d", view.deaths);
+    printAt(282, 177, number, 4, deathsInk);
+    printAt(282, 215, "CMD", 1, deathsInk);
+    printAt(282, 225, "DEATHS", 1, deathsInk);
+
+    // Commander tax after n casts is 2*n extra for the NEXT cast.
+    const int nextTax = view.casts * 2;
+    printAt(180, 260, "COMMANDER", 1, kGold);
+    std::snprintf(number, sizeof(number), "%d", view.casts);
+    printAt(155, 280, number, 3, castsInk);
+    printAt(112, 292, "CASTS", 1, castsInk);
+    std::snprintf(number, sizeof(number), "+%d", nextTax);
+    printAt(259, 280, number, 2, castsInk);
+    printAt(221, 292, "TAX", 1, castsInk);
+
+    // Keep the on-device UI legible even with long user-defined deck names.
+    char deck[31]{};
+    std::snprintf(deck, sizeof(deck), "%.28s", view.deckName);
+    printCentered(325, deck, 1, kIvory);
+    printCentered(339, "TAP A STAT - TURN KNOB", 1, kMuted);
 }
 
 void drawShell() {
@@ -274,6 +478,15 @@ bool initDisplayHardware() {
         kWidth * kRowsPerTransfer * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     gFrame = static_cast<uint16_t *>(heap_caps_malloc(
         kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    gArt = static_cast<uint16_t *>(heap_caps_malloc(
+        180 * 180 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    gSkin = static_cast<uint8_t *>(heap_caps_malloc(
+        120 * 120, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (gSkin && !decodeSkin()) {
+        ESP_LOGE(kTag, "Bundled fantasy image asset invalid");
+        heap_caps_free(gSkin);
+        gSkin = nullptr;
+    }
     if (!gTransferDone || !gDmaStrip || !gFrame) {
         ESP_LOGE(kTag, "No RAM for display (PSRAM must be enabled)");
         return false;
@@ -350,8 +563,11 @@ void displayTask(void *) {
         taskEXIT_CRITICAL(&gStatusLock);
 
         if (snapshot.generation != drawnGeneration) {
-            drawState(snapshot.state, snapshot.decks, snapshot.percent,
-                      snapshot.detail);
+            if (snapshot.gameMode)
+                drawDashboard(snapshot.game);
+            else
+                drawState(snapshot.state, snapshot.decks, snapshot.percent,
+                          snapshot.detail);
             if (!present()) {
                 ESP_LOGE(kTag, "LCD transfer failed; USB sync remains active");
                 break;
@@ -379,6 +595,7 @@ void mtg_display_show(MthStatus state, int storedDecks, int percent,
     // This function is deliberately nonblocking so even progress updates
     // can't hold up the USB receive loop.
     taskENTER_CRITICAL(&gStatusLock);
+    gPending.gameMode = false;
     gPending.state = state;
     gPending.decks = storedDecks;
     gPending.percent = percent;
@@ -388,6 +605,15 @@ void mtg_display_show(MthStatus state, int storedDecks, int percent,
     } else {
         gPending.detail[0] = '\0';
     }
+    ++gPending.generation;
+    taskEXIT_CRITICAL(&gStatusLock);
+}
+
+
+void mtg_display_showGame(const MtgGameView &view) {
+    taskENTER_CRITICAL(&gStatusLock);
+    gPending.gameMode = true;
+    gPending.game = view;
     ++gPending.generation;
     taskEXIT_CRITICAL(&gStatusLock);
 }
