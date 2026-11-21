@@ -45,7 +45,12 @@ std::vector<DeckMeta> gDecks;
 MtgGameView gView;
 portMUX_TYPE gViewLock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t gRotaryEvents = nullptr;
-volatile TickType_t gLastEdgeCw = 0, gLastEdgeCcw = 0;
+// One low-going pulse per physical detent on this board. Use a shared
+// debounce interval (not pdMS_TO_TICKS(5), which rounds to zero at 100 Hz).
+// Shared gating also rejects short opposite-direction bounce.
+volatile TickType_t gLastAcceptedEdge = 0;
+constexpr TickType_t kDebounceTicks =
+    (pdMS_TO_TICKS(20) > 0 ? pdMS_TO_TICKS(20) : 1);
 std::atomic<bool> gReloadPending{false};
 uint32_t gArtworkRevision = 0;
 bool gDirty = false;
@@ -196,10 +201,11 @@ bool loadDecksFromFlash() {
 
 void IRAM_ATTR rotaryInterrupt(void *context) {
     const int direction = int(reinterpret_cast<intptr_t>(context));
-    volatile TickType_t *last = direction > 0 ? &gLastEdgeCw : &gLastEdgeCcw;
     const TickType_t now = xTaskGetTickCountFromISR();
-    if (now - *last < pdMS_TO_TICKS(5)) return;
-    *last = now;
+    // Startup allowance: first pulse must never be suppressed.
+    if (gLastAcceptedEdge && now - gLastAcceptedEdge < kDebounceTicks)
+        return;
+    gLastAcceptedEdge = now;
     BaseType_t woken = pdFALSE;
     xQueueSendFromISR(gRotaryEvents, &direction, &woken);
     if (woken) portYIELD_FROM_ISR();
