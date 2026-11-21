@@ -214,3 +214,22 @@ The display renderer and sync status UI are original code.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+## Dashboard raster typography
+
+The dashboard uses raster font assets from Adafruit GFX's FreeFont collection:
+
+- `main/fonts/FreeSerif24pt7b.h`
+- `main/fonts/FreeSans18pt7b.h`
+- `main/fonts/FreeSans9pt7b.h`
+- `main/fonts/gfxfont.h`
+
+Original files: https://github.com/adafruit/Adafruit-GFX-Library/tree/master/src/Fonts
+
+These header files contain the published bitmap assets and glyph metrics;
+the original `Adafruit_GFX.h` include was replaced with the local glyph
+structure definition so the assets can render in the ESP-IDF framebuffer.
+The Adafruit GFX repository's BSD notice is at
+https://github.com/adafruit/Adafruit-GFX-Library/blob/master/license.txt.
+The FreeFont glyph shapes originate from the GNU FreeFont family; preserve
+applicable FreeFont license notices when redistributing the raster assets.
