@@ -191,10 +191,10 @@ void loadArtFor(const MtgGameView &view) {
                   static_cast<unsigned long>(crcDeckId(view.deckId)));
     FILE *file = std::fopen(path, "rb");
     if (!file) return;
-    const size_t len = std::fread(gArt, sizeof(uint16_t), 180 * 180, file);
+    const size_t len = std::fread(gArt, sizeof(uint16_t), 360 * 360, file);
     const int trailing = std::fgetc(file);
     std::fclose(file);
-    gHasArt = len == 180 * 180 && trailing == EOF;
+    gHasArt = len == 360 * 360 && trailing == EOF;
     ESP_LOGI(kTag, "Deck art %s: %s", path, gHasArt ? "loaded" : "invalid");
 }
 
