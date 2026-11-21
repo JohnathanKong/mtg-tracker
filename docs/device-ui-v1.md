@@ -38,15 +38,14 @@ saved game session. No automatic turn-based resets on this screen.
 Touch/knob behavior is written but **not hardware-verified**; incorrect
 physical orientation or inverted rotation should be reported, not assumed.
 
-**New Game / Reset** is intentionally not a destructive touch gesture in v0.1.
-We will add an explicit confirmation screen before implementing it.
+**New Game:** Hold the center LIFE area for about two seconds, then tap **RESET** on the confirmation screen to start at 40 life and zero all other counters. Tap **CANCEL** to keep the current game.
 
 ## Artwork and graphical assets
 
 When you import artwork on the desktop and sync:
 
 1. The desktop loads each deck's saved image with Qt.
-2. It center-crops and scales to **180×180 RGB565** (64,800 bytes).
+2. It center-crops and scales to **360×360 RGB565** (259,200 bytes).
 3. It sends the image separately over the MTG1 serial connection in
    acknowledged 256-byte chunks with a whole-file CRC-32.
 4. Firmware stores it in SPIFFS with a stable deck-ID-derived filename, and
@@ -59,8 +58,8 @@ Old desktop builds will still sync deck names/counters but **not** the image.
 Use the newest desktop build. The status bar will report verified artwork.
 A missing photo falls back to the original dark fantasy background.
 
-The bundled HUD asset is an original generated design that was compressed
-to a 120×120 indexed image with LZ4 to keep the firmware small. It uses no
+The bundled HUD asset is the original generated design sampled at the panel's
+native **360×360 resolution**, indexed to 32 colors and compressed with LZ4 to preserve crisp outlines. It uses no
 network images and needs no runtime download.
 
 ## Pending follow-up milestones
