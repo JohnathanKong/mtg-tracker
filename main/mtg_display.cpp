@@ -41,13 +41,13 @@ esp_lcd_panel_handle_t gPanel = nullptr;
 SemaphoreHandle_t gTransferDone = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
-uint16_t *gArt = nullptr;       // 180x180 RGB565 user-supplied commander art
-uint8_t *gSkin = nullptr;      // original fantasy overlay, indexed 120x120
+uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
+uint8_t *gSkin = nullptr;      // native 360x360 indexed original fantasy asset
 char gLoadedArtId[96] = {};
 uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
-extern "C" const uint8_t skin_start[] asm("_binary_ui_skin_lz4_start");
-extern "C" const uint8_t skin_end[] asm("_binary_ui_skin_lz4_end");
+extern "C" const uint8_t skin_start[] asm("_binary_ui_skin_360_lz4_start");
+extern "C" const uint8_t skin_end[] asm("_binary_ui_skin_360_lz4_end");
 
 
 // All USB callbacks update only this small pending status, never the LCD
@@ -88,21 +88,49 @@ inline void pixel(int x, int y, uint16_t ink);
 
 // Indexed palette of our original, image-generated fantasy dashboard asset.
 // Artwork source in the repo: main/ui_skin.lz4. NOT a procedural wireframe.
-constexpr uint8_t kPalette[16][3] = {
-    {156,180,146}, {92,113,88}, {55,71,60}, {45,37,33},
-    {2,33,35}, {28,17,19}, {8,17,22}, {2,17,21},
-    {1,18,20}, {1,13,15}, {11,8,11}, {2,6,7},
-    {0,9,11}, {0,4,7}, {0,0,2}, {0,0,0}
+constexpr uint8_t kPalette[32][3] = {
+    {3,11,12},
+    {83,46,19},
+    {13,92,86},
+    {107,74,34},
+    {238,214,161},
+    {150,101,42},
+    {213,167,95},
+    {247,241,216},
+    {171,142,94},
+    {93,231,231},
+    {101,92,89},
+    {7,70,57},
+    {27,48,72},
+    {39,154,155},
+    {37,236,242},
+    {151,107,81},
+    {211,179,144},
+    {170,163,149},
+    {87,161,157},
+    {78,54,86},
+    {151,240,240},
+    {242,201,116},
+    {202,140,55},
+    {115,93,140},
+    {13,134,116},
+    {142,108,159},
+    {183,131,57},
+    {208,103,97},
+    {143,55,55},
+    {155,202,169},
+    {99,200,181},
+    {180,149,199}
 };
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
-// The generated skin is 120x120 indexed pixels and scales 3x on the 360 LCD.
+// The generated skin is native 360x360 indexed pixels without lossy upscaling.
 bool decodeSkin() {
     if (!gSkin) return false;
     const uint8_t *src = skin_start;
     const uint8_t *const end = skin_end;
     uint8_t *out = gSkin;
-    uint8_t *const outEnd = gSkin + 120 * 120;
+    uint8_t *const outEnd = gSkin + 360 * 360;
     while (src < end) {
         const uint8_t token = *src++;
         size_t literal = token >> 4;
@@ -180,65 +208,27 @@ void drawGameSkin() {
                 pixel(x, y, kBg);
                 continue;
             }
-            // Bilinear resampling of embedded graphic skin at native 360px.
-            // The old firmware nearest-neighbor-blew-up a 120px indexed image,
-            // leaving huge blocky pixels around every gold/cyan border.
-            int r = 1, g = 18, b = 20;
-            if (gSkin) {
-                const int x0 = x / 3, y0 = y / 3;
-                const int x1 = std::min(x0 + 1, 119);
-                const int y1 = std::min(y0 + 1, 119);
-                const int fx = x % 3, fy = y % 3;
-                const uint8_t *a = kPalette[gSkin[y0 * 120 + x0] & 15];
-                const uint8_t *b0 = kPalette[gSkin[y0 * 120 + x1] & 15];
-                const uint8_t *c = kPalette[gSkin[y1 * 120 + x0] & 15];
-                const uint8_t *d = kPalette[gSkin[y1 * 120 + x1] & 15];
-                auto interp = [fx, fy](int v00, int v10, int v01, int v11) {
-                    return (v00*(3-fx)*(3-fy) + v10*fx*(3-fy) +
-                            v01*(3-fx)*fy + v11*fx*fy + 4) / 9;
-                };
-                r = interp(a[0], b0[0], c[0], d[0]);
-                g = interp(a[1], b0[1], c[1], d[1]);
-                b = interp(a[2], b0[2], c[2], d[2]);
-            }
+            // Original full-resolution source is quantized to a 32-color palette
+            // at native 360x360. No 120px upscaling, no invented interpolation.
+            const uint8_t idx = gSkin ? gSkin[y * 360 + x] : 0;
+            const uint8_t *swatch = kPalette[idx < 32 ? idx : 0];
+            int r = swatch[0], g = swatch[1], b = swatch[2];
             if (gHasArt) {
-                // Smooth the transferred 180px commander image to 360px
-                // rather than showing 2x2 RGB565 pixel blocks.
-                const int ax = x >> 1, ay = y >> 1;
-                const int bx = std::min(ax + 1, 179);
-                const int by = std::min(ay + 1, 179);
-                auto rgbAt = [](uint16_t swapped) {
-                    return uint16_t((swapped >> 8) | (swapped << 8));
-                };
-                const uint16_t a0 = rgbAt(gArt[ay * 180 + ax]);
-                const uint16_t b0 = rgbAt(gArt[ay * 180 + bx]);
-                const uint16_t c0 = rgbAt(gArt[by * 180 + ax]);
-                const uint16_t d0 = rgbAt(gArt[by * 180 + bx]);
-                const int fx = x & 1, fy = y & 1;
-                auto channel = [fx, fy](int a, int b, int c, int d) {
-                    return (a * (2-fx) * (2-fy) + b * fx * (2-fy) +
-                            c * (2-fx) * fy + d * fx * fy + 2) / 4;
-                };
-                const int photoR = channel(((a0 >> 11)&31)*255/31,
-                                           ((b0 >> 11)&31)*255/31,
-                                           ((c0 >> 11)&31)*255/31,
-                                           ((d0 >> 11)&31)*255/31);
-                const int photoG = channel(((a0 >> 5)&63)*255/63,
-                                           ((b0 >> 5)&63)*255/63,
-                                           ((c0 >> 5)&63)*255/63,
-                                           ((d0 >> 5)&63)*255/63);
-                const int photoB = channel((a0&31)*255/31,
-                                           (b0&31)*255/31,
-                                           (c0&31)*255/31,
-                                           (d0&31)*255/31);
+                const uint16_t swapped = gArt[y * 360 + x];
+                const uint16_t rgb = uint16_t((swapped >> 8) | (swapped << 8));
+                const int photoR = ((rgb >> 11) & 31) * 255 / 31;
+                const int photoG = ((rgb >> 5) & 63) * 255 / 63;
+                const int photoB = (rgb & 31) * 255 / 31;
                 // Keep the artwork subtle under the HUD, most prominent in
                 // the center life panel and the gap above it.
                 const bool focus = ((dx*dx + (dy-5)*(dy-5) < 86*86) ||
                                     (y < 106 && x > 142 && x < 218));
-                const int opacity = (r + g + b > 245) ? 242 : (focus ? 76 : 213);
-                r = (r*opacity + photoR*(255-opacity)*2/3)/255;
-                g = (g*opacity + photoG*(255-opacity)*2/3)/255;
-                b = (b*opacity + photoB*(255-opacity)*2/3)/255;
+                // Never paint away the character image: preserve the HUD's
+                // bright gold/cyan edges, but expose artwork in dark regions.
+                const int opacity = (r + g + b > 230) ? 245 : (focus ? 72 : 164);
+                r = (r*opacity + photoR*(255-opacity))/255;
+                g = (g*opacity + photoG*(255-opacity))/255;
+                b = (b*opacity + photoB*(255-opacity))/255;
             }
             pixel(x, y, color(unsigned(r),unsigned(g),unsigned(b)));
         }
@@ -555,9 +545,9 @@ bool initDisplayHardware() {
     gFrame = static_cast<uint16_t *>(heap_caps_malloc(
         kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gArt = static_cast<uint16_t *>(heap_caps_malloc(
-        180 * 180 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gSkin = static_cast<uint8_t *>(heap_caps_malloc(
-        120 * 120, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        360 * 360, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (gSkin && !decodeSkin()) {
         ESP_LOGE(kTag, "Bundled fantasy image asset invalid");
         heap_caps_free(gSkin);
