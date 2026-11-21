@@ -301,6 +301,7 @@ void changeCounter(int direction) {
 
 void knobStep(int direction) {
     if (gDecks.empty()) return;
+    if (gView.screen == MtgScreen::ConfirmReset) return;
     if (gView.screen == MtgScreen::ChooseDeck) {
         int index = (gView.deckIndex + direction) % int(gDecks.size());
         if (index < 0) index += int(gDecks.size());
@@ -318,7 +319,7 @@ void tap(int x, int y) {
     if (gDecks.empty()) return;
     if (gView.screen == MtgScreen::ConfirmReset) {
         // Two distinct buttons; only a deliberate left-side tap resets.
-        if (x < 180 && y >= 175 && y <= 265) {
+        if (x >= 73 && x <= 175 && y >= 196 && y <= 247) {
             gView.life = 40;
             gView.poison = gView.rad = gView.damage = gView.casts = gView.deaths = 0;
             gView.selected = MtgCounter::Life;
@@ -334,20 +335,21 @@ void tap(int x, int y) {
         selectDeck(gView.deckIndex);
         return;
     }
-    // Top crown: deck chooser. Tap counter area to select it, rotate
-    // to change its value. All counters remain visible on the dashboard.
-    if (y < 54) {
+    // Exact hit regions for the new portrait-left / four-row dashboard.
+    // Top-left artwork opens deck selection. Tax is derived from casts, so
+    // tapping either footer half selects the editable CASTS counter.
+    if (x < 168 && y < 145) {
         gView.screen = MtgScreen::ChooseDeck;
-    } else if (y >= 264) {
+    } else if (y >= 238) {
         gView.selected = MtgCounter::Casts;
-    } else if (y >= 166 && x < 100) {
-        gView.selected = MtgCounter::Damage;
-    } else if (y >= 166 && x > 260) {
-        gView.selected = MtgCounter::Deaths;
-    } else if (y < 166 && x < 135) {
+    } else if (x >= 160 && y >= 43 && y < 88) {
         gView.selected = MtgCounter::Poison;
-    } else if (y < 166 && x > 225) {
+    } else if (x >= 160 && y >= 88 && y < 130) {
         gView.selected = MtgCounter::Rad;
+    } else if (x >= 160 && y >= 130 && y < 173) {
+        gView.selected = MtgCounter::Damage;
+    } else if (x >= 160 && y >= 173 && y < 222) {
+        gView.selected = MtgCounter::Deaths;
     } else {
         gView.selected = MtgCounter::Life;
     }
@@ -384,7 +386,7 @@ void task(void *) {
             touchX = x; touchY = y;
             // Long hold over LIFE starts a *confirmation*, never an instant reset.
             if (!holdTriggered && gView.screen == MtgScreen::Dashboard &&
-                x >= 120 && x <= 240 && y >= 140 && y <= 245 &&
+                x >= 34 && x <= 161 && y >= 168 && y <= 235 &&
                 esp_timer_get_time() - touchStarted >= 1800000) {
                 gView.screen = MtgScreen::ConfirmReset;
                 holdTriggered = true;
