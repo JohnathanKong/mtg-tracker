@@ -180,9 +180,27 @@ void drawGameSkin() {
                 pixel(x, y, kBg);
                 continue;
             }
-            const uint8_t index = gSkin ? gSkin[(y / 3) * 120 + (x / 3)] : 8;
-            const uint8_t *palette = kPalette[index < 16 ? index : 15];
-            int r = palette[0], g = palette[1], b = palette[2];
+            // Bilinear resampling of embedded graphic skin at native 360px.
+            // The old firmware nearest-neighbor-blew-up a 120px indexed image,
+            // leaving huge blocky pixels around every gold/cyan border.
+            int r = 1, g = 18, b = 20;
+            if (gSkin) {
+                const int x0 = x / 3, y0 = y / 3;
+                const int x1 = std::min(x0 + 1, 119);
+                const int y1 = std::min(y0 + 1, 119);
+                const int fx = x % 3, fy = y % 3;
+                const uint8_t *a = kPalette[gSkin[y0 * 120 + x0] & 15];
+                const uint8_t *b0 = kPalette[gSkin[y0 * 120 + x1] & 15];
+                const uint8_t *c = kPalette[gSkin[y1 * 120 + x0] & 15];
+                const uint8_t *d = kPalette[gSkin[y1 * 120 + x1] & 15];
+                auto interp = [fx, fy](int v00, int v10, int v01, int v11) {
+                    return (v00*(3-fx)*(3-fy) + v10*fx*(3-fy) +
+                            v01*(3-fx)*fy + v11*fx*fy + 4) / 9;
+                };
+                r = interp(a[0], b0[0], c[0], d[0]);
+                g = interp(a[1], b0[1], c[1], d[1]);
+                b = interp(a[2], b0[2], c[2], d[2]);
+            }
             if (gHasArt) {
                 const uint16_t swapped = gArt[(y / 2) * 180 + (x / 2)];
                 const uint16_t rgb = uint16_t((swapped >> 8) | (swapped << 8));
