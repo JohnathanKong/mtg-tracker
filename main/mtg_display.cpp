@@ -88,46 +88,18 @@ inline void pixel(int x, int y, uint16_t ink);
 
 // Indexed palette of our original, image-generated fantasy dashboard asset.
 // Artwork source in the repo: main/ui_skin.lz4. NOT a procedural wireframe.
-constexpr uint8_t kPalette[32][3] = {
-    {3,11,12},
-    {83,46,19},
-    {13,92,86},
-    {107,74,34},
-    {238,214,161},
-    {150,101,42},
-    {213,167,95},
-    {247,241,216},
-    {171,142,94},
-    {93,231,231},
-    {101,92,89},
-    {7,70,57},
-    {27,48,72},
-    {39,154,155},
-    {37,236,242},
-    {151,107,81},
-    {211,179,144},
-    {170,163,149},
-    {87,161,157},
-    {78,54,86},
-    {151,240,240},
-    {242,201,116},
-    {202,140,55},
-    {115,93,140},
-    {13,134,116},
-    {142,108,159},
-    {183,131,57},
-    {208,103,97},
-    {143,55,55},
-    {155,202,169},
-    {99,200,181},
-    {180,149,199}
-};
+// Embedded original fantasy asset: first 256*3 bytes are RGB palette,
+// followed by an LZ4-compressed native 360x360 indexed image. Keeps source
+// gradients without any 120px upscaling or firmware drawing approximations.
+constexpr size_t kPaletteByteSize = 256 * 3;
+
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
 // The generated skin is native 360x360 indexed pixels without lossy upscaling.
 bool decodeSkin() {
     if (!gSkin) return false;
-    const uint8_t *src = skin_start;
+    if (skin_end - skin_start < ptrdiff_t(kPaletteByteSize + 2)) return false;
+    const uint8_t *src = skin_start + kPaletteByteSize;
     const uint8_t *const end = skin_end;
     uint8_t *out = gSkin;
     uint8_t *const outEnd = gSkin + 360 * 360;
@@ -211,7 +183,7 @@ void drawGameSkin() {
             // Original full-resolution source is quantized to a 32-color palette
             // at native 360x360. No 120px upscaling, no invented interpolation.
             const uint8_t idx = gSkin ? gSkin[y * 360 + x] : 0;
-            const uint8_t *swatch = kPalette[idx < 32 ? idx : 0];
+            const uint8_t *swatch = skin_start + size_t(idx) * 3;
             int r = swatch[0], g = swatch[1], b = swatch[2];
             if (gHasArt) {
                 const uint16_t swapped = gArt[y * 360 + x];
