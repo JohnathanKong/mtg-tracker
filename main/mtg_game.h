@@ -3,7 +3,7 @@
 
 // Game-long counters are independent of desktop connectivity and saved locally.
 // New games reset current values; deck library synchronization does NOT do this.
-enum class MtgScreen : uint8_t { Dashboard, ChooseDeck };
+enum class MtgScreen : uint8_t { Dashboard, ChooseDeck, ConfirmReset };
 enum class MtgCounter : uint8_t { Life, Poison, Rad, Damage, Casts, Deaths };
 
 struct MtgGameView {
