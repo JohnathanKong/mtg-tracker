@@ -202,11 +202,35 @@ void drawGameSkin() {
                 b = interp(a[2], b0[2], c[2], d[2]);
             }
             if (gHasArt) {
-                const uint16_t swapped = gArt[(y / 2) * 180 + (x / 2)];
-                const uint16_t rgb = uint16_t((swapped >> 8) | (swapped << 8));
-                const int photoR = ((rgb >> 11) & 31) * 255 / 31;
-                const int photoG = ((rgb >> 5) & 63) * 255 / 63;
-                const int photoB = (rgb & 31) * 255 / 31;
+                // Smooth the transferred 180px commander image to 360px
+                // rather than showing 2x2 RGB565 pixel blocks.
+                const int ax = x >> 1, ay = y >> 1;
+                const int bx = std::min(ax + 1, 179);
+                const int by = std::min(ay + 1, 179);
+                auto rgbAt = [](uint16_t swapped) {
+                    return uint16_t((swapped >> 8) | (swapped << 8));
+                };
+                const uint16_t a0 = rgbAt(gArt[ay * 180 + ax]);
+                const uint16_t b0 = rgbAt(gArt[ay * 180 + bx]);
+                const uint16_t c0 = rgbAt(gArt[by * 180 + ax]);
+                const uint16_t d0 = rgbAt(gArt[by * 180 + bx]);
+                const int fx = x & 1, fy = y & 1;
+                auto channel = [fx, fy](int a, int b, int c, int d) {
+                    return (a * (2-fx) * (2-fy) + b * fx * (2-fy) +
+                            c * (2-fx) * fy + d * fx * fy + 2) / 4;
+                };
+                const int photoR = channel(((a0 >> 11)&31)*255/31,
+                                           ((b0 >> 11)&31)*255/31,
+                                           ((c0 >> 11)&31)*255/31,
+                                           ((d0 >> 11)&31)*255/31);
+                const int photoG = channel(((a0 >> 5)&63)*255/63,
+                                           ((b0 >> 5)&63)*255/63,
+                                           ((c0 >> 5)&63)*255/63,
+                                           ((d0 >> 5)&63)*255/63);
+                const int photoB = channel((a0&31)*255/31,
+                                           (b0&31)*255/31,
+                                           (c0&31)*255/31,
+                                           (d0&31)*255/31);
                 // Keep the artwork subtle under the HUD, most prominent in
                 // the center life panel and the gap above it.
                 const bool focus = ((dx*dx + (dy-5)*(dy-5) < 86*86) ||
