@@ -5,7 +5,7 @@ The desktop deck manager is a [separate repository](https://github.com/Johnathan
 
 **This repository is a native ESP-IDF v6.1 / C++ project, using the exact same VS Code development workflow as the GC8 gauge.** No PlatformIO, Arduino IDE, Docker, browser flasher, or manually invoked Python/esptool commands are needed for everyday firmware development.
 
-> **Current milestone:** The firmware displays a live MTG Tracker status interface on the **360×360 round screen** and receives/stores deck profiles. It shows boot, ready, receiving progress, success/failure and saved deck count. The touchscreen, rotary knob and actual gameplay counters are not implemented yet. Flashing **replaces the existing Waveshare factory firmware** on the S3. Save the vendor's [factory firmware/recovery instructions](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) before flashing.
+> **Current milestone:** The round **360×360 screen** runs the **portrait-left Always Track dashboard** with the deck's uploaded commander art, editable life/poison/rad/commander-damage/deaths/casts values, calculated commander tax, deck selection, and per-deck saved game state. The receiver retains the existing USB deck/artwork synchronization. See [Device UI v0.2](docs/device-ui-v2.md). Flashing **replaces the existing Waveshare factory firmware** on the S3. Save the vendor's [factory firmware/recovery instructions](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) before flashing.
 
 **First build after the display update:** Run `git pull` then `build.bat` normally from the ESP-IDF terminal. `build.bat` detects an old `sdkconfig` without PSRAM, saves it as `sdkconfig.pre-display-backup`, and regenerates the ESP32-S3 configuration with display support. It does not remove deck profiles. If ESP-IDF still reports a stale build directory, remove only generated `build/` and retry.
 
@@ -86,9 +86,10 @@ This Waveshare knob has **two processors**: **ESP32-S3R8** (our MTG firmware tar
 ## On-device Commander dashboard (first playable milestone)
 
 The new firmware replaces the old diagnostic-only screen with a **round
-Always Track dashboard**, modeled on the approved dark-fantasy design. The
-visual skin is an **original generated graphical asset** embedded in
-\`main/ui_skin.lz4\` and displayed with your uploaded commander art behind it.
+Always Track dashboard** in a portrait-left/list-right layout. The
+native 360×360 fantasy frame is embedded in
+\`main/ui_portrait_hud_360.lz4\`; your uploaded commander art is placed
+on the left and the counter values remain editable text on the right.
 
 The six visible counters are Life (starts at 40), Poison, Rad, Commander
 Damage, Commander Casts / Next-Cast Tax, and Commander Deaths. Next-cast
@@ -96,7 +97,7 @@ commander tax is calculated as **2 × previous casts**, not manually stored.
 
 - **Tap** the counter you want to change. Its number becomes gold.
 - **Rotate the knob** clockwise/counterclockwise to increment/decrement it.
-- **Tap the crown at the top** to open deck selection.
+- **Tap the commander portrait (upper-left)** to open deck selection.
 - **Rotate** to choose a different deck; **tap** to enter it.
 - Each deck has independent **persistent values saved in NVS**. Synchronizing
   the deck library does **not** reset the game's current values.
@@ -158,7 +159,7 @@ The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-I
 | `main/mtg_receiver.cpp` | Native ESP-IDF USB Serial/JTAG receiver, JSON validation and flash persistence. |
 | `main/mtg_display.cpp`, `.h` | Round 360×360 SH8601 QSPI display, PWM backlight, graphical dashboard rendering. |
 | `main/mtg_game.cpp`, `.h` | Touch/knob input, deck selection and per-deck saved game-long counters. |
-| `main/ui_skin.lz4` | Original generated dark-fantasy panel artwork, compressed and embedded into the firmware. |
+| `main/ui_portrait_hud_360.lz4` | Original generated dark-fantasy panel artwork, compressed and embedded into the firmware. |
 | `main/panel_init_commands.h` | SH8601 panel power-up sequence adapted from an Apache-2.0 hardware reference; see `THIRD_PARTY_NOTICES.md`. |
 | `main/idf_component.yml` | ESP-IDF-managed cJSON dependency. |
 | `docs/sync-protocol-v1.md` | Desktop/device USB handshake and deck JSON format. |
