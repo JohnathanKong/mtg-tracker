@@ -18,6 +18,7 @@
 
 #include "cJSON.h"
 #include "driver/gpio.h"
+#include "esp_timer.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -45,12 +46,13 @@ std::vector<DeckMeta> gDecks;
 MtgGameView gView;
 portMUX_TYPE gViewLock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t gRotaryEvents = nullptr;
-// One low-going pulse per physical detent on this board. Use a shared
-// debounce interval (not pdMS_TO_TICKS(5), which rounds to zero at 100 Hz).
-// Shared gating also rejects short opposite-direction bounce.
-volatile TickType_t gLastAcceptedEdge = 0;
-constexpr TickType_t kDebounceTicks =
-    (pdMS_TO_TICKS(20) > 0 ? pdMS_TO_TICKS(20) : 1);
+// The knob GPIO7/8 are direction-specific active-LOW pulses, not quadrature.
+// Read each level at 2 ms cadence, require two consecutive LOW samples
+// to count exactly once, and two consecutive HIGH samples to re-arm.
+// This rejects switch bounce and does not depend on FreeRTOS tick rounding.
+struct PulseDebounce { uint8_t lows = 0, highs = 2; bool armed = true; };
+PulseDebounce gPulses[2];
+esp_timer_handle_t gEncoderTimer = nullptr;
 std::atomic<bool> gReloadPending{false};
 uint32_t gArtworkRevision = 0;
 bool gDirty = false;
@@ -199,35 +201,49 @@ bool loadDecksFromFlash() {
     return true;
 }
 
-void IRAM_ATTR rotaryInterrupt(void *context) {
-    const int direction = int(reinterpret_cast<intptr_t>(context));
-    const TickType_t now = xTaskGetTickCountFromISR();
-    // Startup allowance: first pulse must never be suppressed.
-    if (gLastAcceptedEdge && now - gLastAcceptedEdge < kDebounceTicks)
-        return;
-    gLastAcceptedEdge = now;
-    BaseType_t woken = pdFALSE;
-    xQueueSendFromISR(gRotaryEvents, &direction, &woken);
-    if (woken) portYIELD_FROM_ISR();
+void pollEncoder(void *) {
+    if (!gRotaryEvents) return;
+    const gpio_num_t pins[2] = {kClockwise, kCounterclockwise};
+    const int directions[2] = {+1, -1};
+    for (int i = 0; i < 2; ++i) {
+        PulseDebounce &pulse = gPulses[i];
+        if (gpio_get_level(pins[i]) == 0) {
+            pulse.highs = 0;
+            if (pulse.lows < 3) ++pulse.lows;
+            if (pulse.armed && pulse.lows >= 2) {
+                pulse.armed = false; // Never count twice until stable release
+                const int direction = directions[i];
+                xQueueSend(gRotaryEvents, &direction, 0);
+            }
+        } else {
+            pulse.lows = 0;
+            if (pulse.highs < 3) ++pulse.highs;
+            if (pulse.highs >= 2) pulse.armed = true;
+        }
+    }
 }
 
 void initRotary() {
     gRotaryEvents = xQueueCreate(64, sizeof(int));
+    if (!gRotaryEvents) { ESP_LOGE(kTag, "Encoder queue unavailable"); return; }
     gpio_config_t config = {};
     config.pin_bit_mask = (1ULL << kClockwise) | (1ULL << kCounterclockwise);
     config.mode = GPIO_MODE_INPUT;
     config.pull_up_en = GPIO_PULLUP_ENABLE;
-    config.intr_type = GPIO_INTR_NEGEDGE;
+    config.intr_type = GPIO_INTR_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&config));
-    const esp_err_t err = gpio_install_isr_service(0);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(kTag, "Encoder ISR service: %s", esp_err_to_name(err));
+    // Start armed only after the pins have both been sampled HIGH.
+    for (auto &pulse : gPulses) pulse = PulseDebounce{};
+    esp_timer_create_args_t timerConfig = {};
+    timerConfig.callback = pollEncoder;
+    timerConfig.name = "mtg_encoder";
+    const esp_err_t err = esp_timer_create(&timerConfig, &gEncoderTimer);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Encoder poll timer: %s", esp_err_to_name(err));
         return;
     }
-    ESP_ERROR_CHECK(gpio_isr_handler_add(kClockwise, rotaryInterrupt,
-                      reinterpret_cast<void *>(intptr_t(1))));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(kCounterclockwise, rotaryInterrupt,
-                      reinterpret_cast<void *>(intptr_t(-1))));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(gEncoderTimer, 2000));
+    ESP_LOGI(kTag, "Encoder stable-low/stable-high sampler started (2 ms)");
 }
 
 void initTouch() {
