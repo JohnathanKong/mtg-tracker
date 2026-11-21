@@ -352,6 +352,19 @@ void drawDashboard(const MtgGameView &view) {
         return;
     }
 
+    if (view.screen == MtgScreen::ConfirmReset) {
+        // Deliberate, high-contrast confirmation. Nothing resets on a hold.
+        fillRect(61, 119, 238, 153, kBg);
+        fancyText(FreeSans18pt7b, 180, 153, "NEW GAME?", 1, kGold);
+        fancyText(FreeSans9pt7b, 180, 179, "RESET ALL COUNTERS", 1, kIvory);
+        fillRect(75, 192, 98, 50, kGoldDim);
+        fillRect(187, 192, 98, 50, kSurface);
+        fancyText(FreeSans9pt7b, 125, 222, "RESET", 1, kGold);
+        fancyText(FreeSans9pt7b, 235, 222, "CANCEL", 1, kIvory);
+        fancyText(FreeSans9pt7b, 180, 301, "TAP TO CONFIRM", 1, kMuted);
+        return;
+    }
+
     if (view.screen == MtgScreen::ChooseDeck) {
         fancyText(FreeSans18pt7b, 180, 82, "SELECT DECK", 1, kGold);
         fillRect(58, 122, 244, 135, kBg);
@@ -375,41 +388,41 @@ void drawDashboard(const MtgGameView &view) {
     const uint16_t deathsInk = view.selected == MtgCounter::Deaths ? kGold : kIvory;
 
     char number[24]{};
+    // Native 24pt FreeSerif. Never double bitmap pixels for the main life
+    // number: that produced blocky digits and crossed the HUD boundaries.
     std::snprintf(number, sizeof(number), "%d", view.life);
-    const int scale = std::strlen(number) > 2 ? 1 : 2;
-    fancyText(FreeSerif24pt7b, 180, scale == 2 ? 208 : 197,
-              number, scale, lifeInk);
-    fancyText(FreeSans9pt7b, 180, 242, "LIFE", 1, lifeInk);
+    fancyText(FreeSerif24pt7b, 180, 202, number, 1, lifeInk);
+    fancyText(FreeSans9pt7b, 180, 235, "LIFE", 1, lifeInk);
 
     std::snprintf(number, sizeof(number), "%d", view.poison);
-    fancyText(FreeSans18pt7b, 99, 106, number, 1, poisonInk);
-    fancyText(FreeSans9pt7b, 99, 134, "POISON", 1, poisonInk);
+    fancyText(FreeSans18pt7b, 96, 104, number, 1, poisonInk);
+    fancyText(FreeSans9pt7b, 96, 129, "POISON", 1, poisonInk);
 
     std::snprintf(number, sizeof(number), "%d", view.rad);
-    fancyText(FreeSans18pt7b, 261, 106, number, 1, radInk);
-    fancyText(FreeSans9pt7b, 261, 134, "RAD", 1, radInk);
+    fancyText(FreeSans18pt7b, 264, 104, number, 1, radInk);
+    fancyText(FreeSans9pt7b, 264, 129, "RAD", 1, radInk);
 
     std::snprintf(number, sizeof(number), "%d", view.damage);
-    fancyText(FreeSans18pt7b, 72, 211, number, 1, damageInk);
-    fancyText(FreeSans9pt7b, 72, 236, "DAMAGE", 1, damageInk);
+    fancyText(FreeSans18pt7b, 78, 198, number, 1, damageInk);
+    fancyText(FreeSans9pt7b, 78, 226, "DAMAGE", 1, damageInk);
 
     std::snprintf(number, sizeof(number), "%d", view.deaths);
-    fancyText(FreeSans18pt7b, 288, 211, number, 1, deathsInk);
-    fancyText(FreeSans9pt7b, 288, 236, "DEATHS", 1, deathsInk);
+    fancyText(FreeSans18pt7b, 282, 198, number, 1, deathsInk);
+    fancyText(FreeSans9pt7b, 282, 226, "DEATHS", 1, deathsInk);
 
-    fancyText(FreeSans9pt7b, 180, 270, "COMMANDER", 1, kGold);
+    // The commander bar is only ~65px tall. Put captions above each value,
+    // not horizontally on the same baseline as the tall glyphs.
+    fancyText(FreeSans9pt7b, 180, 272, "COMMANDER", 1, kGold);
+    fancyText(FreeSans9pt7b, 109, 291, "CASTS", 1, castsInk);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    fancyText(FreeSans18pt7b, 150, 303, number, 1, castsInk);
-    fancyText(FreeSans9pt7b, 105, 304, "CASTS", 1, castsInk);
+    fancyText(FreeSans18pt7b, 150, 318, number, 1, castsInk);
+    fancyText(FreeSans9pt7b, 214, 291, "TAX", 1, castsInk);
     std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    fancyText(FreeSans18pt7b, 272, 303, number, 1, castsInk);
-    fancyText(FreeSans9pt7b, 214, 304, "TAX", 1, castsInk);
+    fancyText(FreeSans18pt7b, 261, 318, number, 1, castsInk);
 
-    // The uploaded image is the panel background; the deck name is a
-    // compact footer, not another large block on top of the character.
     char deck[22]{};
     std::snprintf(deck, sizeof(deck), "%.17s", view.deckName);
-    fancyText(FreeSans9pt7b, 180, 342, deck, 1, kIvory);
+    fancyText(FreeSans9pt7b, 180, 343, deck, 1, kIvory);
 }
 
 void drawShell() {
