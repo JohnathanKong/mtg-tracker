@@ -314,7 +314,6 @@ void processLine(const char *command) {
         std::snprintf(artTarget, sizeof(artTarget), "/mtg/a%s.rgb", id);
         std::snprintf(artBackup, sizeof(artBackup), "/mtg/a%s.bak", id);
         transferKind = TransferKind::Artwork;
-        transferKind = TransferKind::Library;
         expectedBytes = size;
         receivedBytes = chunkRemaining = 0;
         expectedCrc = static_cast<uint32_t>(std::strtoul(hex, nullptr, 16));
@@ -340,6 +339,7 @@ void processLine(const char *command) {
             std::strlen(crcHex) != 8 || total == 0 || total > kMaxPayload) {
             replyError("BEGIN"); return;
         }
+        transferKind = TransferKind::Library;
         expectedBytes = size_t(total);
         receivedBytes = chunkRemaining = 0;
         expectedCrc = static_cast<uint32_t>(std::strtoul(crcHex, nullptr, 16));
