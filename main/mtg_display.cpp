@@ -98,7 +98,7 @@ constexpr size_t kPaletteByteSize = 256 * 3;
 // The generated skin is native 360x360 indexed pixels without lossy upscaling.
 bool decodeSkin() {
     if (!gSkin) return false;
-    if (skin_end - skin_start < ptrdiff_t(kPaletteByteSize + 2)) return false;
+    if (size_t(skin_end - skin_start) < kPaletteByteSize + 2) return false;
     const uint8_t *src = skin_start + kPaletteByteSize;
     const uint8_t *const end = skin_end;
     uint8_t *out = gSkin;
