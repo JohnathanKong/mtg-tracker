@@ -100,6 +100,8 @@ commander tax is calculated as **2 × previous casts**, not manually stored.
 - **Rotate** to choose a different deck; **tap** to enter it.
 - Each deck has independent **persistent values saved in NVS**. Synchronizing
   the deck library does **not** reset the game's current values.
+- **Hold LIFE for 2 seconds**, then explicitly tap **RESET** to start a new game
+  at 40 life, or **CANCEL** to keep the saved game.
 
 Touch uses the board's CST816D on I2C (GPIO11/12); the two knob rotation
 pulses use GPIO8 (clockwise) and GPIO7 (counterclockwise). They are not a
@@ -122,7 +124,7 @@ Firmware flashing and deck synchronization are separate operations.
 4. Click **Sync Deck Library**.
 5. A successful transfer requires the device to acknowledge the checksum and saved profile count. The device stores deck data in flash and can be disconnected afterward.
 
-**Transferred now:** deck and commander names, mana-color identity, selected counters, named custom trackers, and **the deck's uploaded commander image** (center-cropped to 180×180 RGB565). Photos are CRC-verified and saved to device flash. **Not transferred:** deck-list URLs, live life totals/counters, or firmware updates. Gameplay values are saved locally on the ESP32-S3.
+**Transferred now:** deck and commander names, mana-color identity, selected counters, named custom trackers, and **the deck's uploaded commander image** (center-cropped to 360×360 RGB565). Photos are CRC-verified and saved to device flash. **Not transferred:** deck-list URLs, live life totals/counters, or firmware updates. Gameplay values are saved locally on the ESP32-S3.
 
 The receiver uses the ESP32-S3 **native USB Serial/JTAG** driver, which matches the S3's COM port on this Waveshare. **It starts before LCD initialization**, and the SH8601 screen now renders on a separate lower-priority task: a failed panel should no longer block `MTG1 HELLO` or deck transfers. Successful flashing only confirms USB bootloader access; app-to-desktop communications and screen output still require hardware testing.
 
@@ -166,7 +168,7 @@ The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-I
 
 **USB routing:** On this dual-MCU Waveshare, the ESP32-S3 USB-C orientation exposes **native USB Serial/JTAG**, not UART0. The opposite orientation connects the secondary ESP32 through a USB-to-UART chip. Select the S3 port, and close ESP-IDF Monitor before using the desktop Sync page. If COM5 changes after reflashing or reconnecting, refresh the port list.
 
-**Display hardware:** 360×360 round SH8601 panel over QSPI using GPIO 13–18 and 21, with GPIO47 PWM brightness. The firmware uses PSRAM and Espressif's managed `esp_lcd_sh8601` driver, not a web browser or an additional host toolchain. The first physical LCD test is still pending.
+**Display hardware:** 360×360 round SH8601 panel over QSPI using GPIO 13–18 and 21, with GPIO47 PWM brightness. The firmware uses PSRAM and Espressif's managed `esp_lcd_sh8601` driver, not a web browser or an additional host toolchain. The physical LCD is working; the native-resolution HUD, artwork-transfer repair, and sampled encoder input need device verification.
 
 The firmware uses the same **MTG1** deck-sync protocol as the desktop app. It validates each block, CRC-32, and JSON before replacing previously saved profiles. No Wi-Fi, NFC or additional external hardware is required for this stage.
 
