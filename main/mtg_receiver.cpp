@@ -28,14 +28,14 @@ namespace {
 // Its USB-C reverse orientation connects a separate classic ESP32 UART bridge.
 // Do NOT use UART0 for MTG1 sync: that is not the S3 COM port.
 constexpr size_t kMaxPayload = 65536;
-constexpr size_t kMaxChunk = 256;
+constexpr size_t kMaxChunk = 1024;
 constexpr size_t kMaxLine = 95;
 constexpr int64_t kIdleTimeoutUs = 15000000;
 constexpr char kFolder[] = "/mtg";
 constexpr char kLive[] = "/mtg/decks.json";
 constexpr char kTemp[] = "/mtg/decks.tmp";
 constexpr char kBackup[] = "/mtg/decks.bak";
-constexpr size_t kArtworkBytes = 180 * 180 * 2;
+constexpr size_t kArtworkBytes = 360 * 360 * 2;
 enum class TransferKind { None, Library, Artwork };
 TransferKind transferKind = TransferKind::None;
 char artId[9] = {};
