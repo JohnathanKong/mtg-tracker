@@ -321,86 +321,173 @@ void fancyText(const GFXfont &font, int centerX, int baseline,
     }
 }
 
+// All text is measured by the actual GFX glyph bounds, then centered in
+// the on-screen panel's safe rectangle. This avoids the previous overlapping
+// "baseline by eye" layout. Static icons/borders live in ui_portrait_hud_360.
+struct TextRect { int x, y, w, h; };
+struct FontExtents {
+    int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    bool visible = false;
+    int width() const { return visible ? x1 - x0 : 0; }
+    int height() const { return visible ? y1 - y0 : 0; }
+};
+
+FontExtents getFontExtents(const GFXfont &font, const char *text) {
+    FontExtents ext;
+    int advance = 0;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
+         *p; ++p) {
+        if (*p < font.first || *p > font.last) continue;
+        const GFXglyph &g = font.glyph[*p - font.first];
+        if (g.width && g.height) {
+            const int gx0 = advance + g.xOffset;
+            const int gy0 = g.yOffset;
+            const int gx1 = gx0 + g.width;
+            const int gy1 = gy0 + g.height;
+            if (!ext.visible) {
+                ext.x0 = gx0; ext.y0 = gy0;
+                ext.x1 = gx1; ext.y1 = gy1;
+                ext.visible = true;
+            } else {
+                ext.x0 = std::min(ext.x0, gx0);
+                ext.y0 = std::min(ext.y0, gy0);
+                ext.x1 = std::max(ext.x1, gx1);
+                ext.y1 = std::max(ext.y1, gy1);
+            }
+        }
+        advance += g.xAdvance;
+    }
+    return ext;
+}
+
+void textInPanel(TextRect rect, const char *text,
+                 const GFXfont &preferred, uint16_t ink) {
+    const GFXfont *font = &preferred;
+    FontExtents e = getFontExtents(*font, text);
+    if (e.width() > rect.w || e.height() > rect.h) {
+        font = &FreeSans9pt7b;
+        e = getFontExtents(*font, text);
+    }
+    if (!e.visible) return;
+    if (e.width() > rect.w || e.height() > rect.h) {
+        // Small fallback, mainly for 4-digit poison/damage values.
+        printAt(rect.x + rect.w / 2,
+                rect.y + (rect.h - 7) / 2, text, 1, ink);
+        return;
+    }
+    const int originX = rect.x + (rect.w - e.width()) / 2 - e.x0;
+    const int baseline = rect.y + (rect.h - e.height()) / 2 - e.y0;
+    int pen = originX;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
+         *p; ++p) {
+        if (*p < font->first || *p > font->last) continue;
+        const GFXglyph &g = font->glyph[*p - font->first];
+        const uint8_t *data = font->bitmap + g.bitmapOffset;
+        int bit = 0;
+        for (int y = 0; y < g.height; ++y) {
+            for (int x = 0; x < g.width; ++x, ++bit) {
+                if (data[bit >> 3] & (0x80 >> (bit & 7))) {
+                    pixel(pen + g.xOffset + x,
+                          baseline + g.yOffset + y, ink);
+                }
+            }
+        }
+        pen += g.xAdvance;
+    }
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     drawGameSkin();
 
+    // The entire round face remains legible even without a synced artwork.
     if (view.deckCount == 0) {
-        fancyText(FreeSans18pt7b, 180, 166, "NO DECKS", 1, kIvory);
-        fancyText(FreeSans9pt7b, 180, 211, "SYNC FROM DESKTOP", 1, kGold);
+        textInPanel({42, 134, 276, 40}, "NO DECKS",
+                    FreeSans18pt7b, kIvory);
+        textInPanel({40, 184, 280, 24}, "SYNC FROM DESKTOP",
+                    FreeSans9pt7b, kTeal);
         return;
     }
 
     if (view.screen == MtgScreen::ConfirmReset) {
-        // Deliberate, high-contrast confirmation. Nothing resets on a hold.
-        fillRect(61, 119, 238, 153, kBg);
-        fancyText(FreeSans18pt7b, 180, 153, "NEW GAME?", 1, kGold);
-        fancyText(FreeSans9pt7b, 180, 179, "RESET ALL COUNTERS", 1, kIvory);
-        fillRect(75, 192, 98, 50, kGoldDim);
-        fillRect(187, 192, 98, 50, kSurface);
-        fancyText(FreeSans9pt7b, 125, 222, "RESET", 1, kGold);
-        fancyText(FreeSans9pt7b, 235, 222, "CANCEL", 1, kIvory);
-        fancyText(FreeSans9pt7b, 180, 301, "TAP TO CONFIRM", 1, kMuted);
+        fillRect(48, 105, 264, 169, kBg);
+        textInPanel({60, 116, 240, 35}, "NEW GAME?",
+                    FreeSans18pt7b, kGold);
+        textInPanel({61, 159, 238, 22}, "RESET ALL COUNTERS",
+                    FreeSans9pt7b, kIvory);
+        borderBox(73, 196, 102, 51, kGold, kGoldDim);
+        borderBox(184, 196, 102, 51, kTeal, kSurface);
+        textInPanel({75, 200, 97, 41}, "RESET",
+                    FreeSans9pt7b, kIvory);
+        textInPanel({187, 200, 95, 41}, "CANCEL",
+                    FreeSans9pt7b, kIvory);
         return;
     }
 
     if (view.screen == MtgScreen::ChooseDeck) {
-        fancyText(FreeSans18pt7b, 180, 82, "SELECT DECK", 1, kGold);
-        fillRect(58, 122, 244, 135, kBg);
-        char number[32];
-        std::snprintf(number, sizeof(number), "%d / %d",
+        fillRect(48, 90, 264, 185, kBg);
+        textInPanel({58, 101, 244, 34}, "SELECT DECK",
+                    FreeSans18pt7b, kGold);
+        char deckNumber[30];
+        std::snprintf(deckNumber, sizeof(deckNumber), "%d / %d",
                       view.deckIndex + 1, view.deckCount);
-        fancyText(FreeSans18pt7b, 180, 165, number, 1, kTeal);
-        char deck[25]{};
-        std::snprintf(deck, sizeof(deck), "%.17s", view.deckName);
-        fancyText(FreeSans9pt7b, 180, 202, deck, 1, kIvory);
-        fancyText(FreeSans9pt7b, 180, 238, "TAP TO PLAY", 1, kGold);
-        fancyText(FreeSans9pt7b, 180, 303, "TURN KNOB TO CHOOSE", 1, kMuted);
+        textInPanel({64, 143, 232, 29}, deckNumber, FreeSans18pt7b, kTeal);
+        char deck[27]{};
+        std::snprintf(deck, sizeof(deck), "%.24s", view.deckName);
+        textInPanel({55, 187, 250, 24}, deck, FreeSans9pt7b, kIvory);
+        textInPanel({55, 227, 250, 24}, "TAP TO PLAY",
+                    FreeSans9pt7b, kGold);
         return;
     }
 
-    const uint16_t lifeInk = view.selected == MtgCounter::Life ? kGold : kIvory;
-    const uint16_t poisonInk = view.selected == MtgCounter::Poison ? kGold : kIvory;
-    const uint16_t radInk = view.selected == MtgCounter::Rad ? kGold : kIvory;
-    const uint16_t damageInk = view.selected == MtgCounter::Damage ? kGold : kIvory;
-    const uint16_t castsInk = view.selected == MtgCounter::Casts ? kGold : kIvory;
-    const uint16_t deathsInk = view.selected == MtgCounter::Deaths ? kGold : kIvory;
+    const uint16_t accent = color(115, 223, 255);
+    const uint16_t white = color(250, 247, 243);
+    const uint16_t label = color(239, 237, 230);
 
-    char number[24]{};
-    // Native 24pt FreeSerif. Never double bitmap pixels for the main life
-    // number: that produced blocky digits and crossed the HUD boundaries.
+    char number[24];
     std::snprintf(number, sizeof(number), "%d", view.life);
-    fancyText(FreeSerif24pt7b, 180, 190, number, 1, lifeInk);
-    fancyText(FreeSans9pt7b, 180, 218, "LIFE", 1, lifeInk);
+    textInPanel({34, 168, 126, 55}, number,
+                FreeSerif24pt7b,
+                view.selected == MtgCounter::Life ? accent : white);
+    textInPanel({45, 221, 112, 20}, "LIFE", FreeSans9pt7b, accent);
 
-    std::snprintf(number, sizeof(number), "%d", view.poison);
-    fancyText(FreeSans18pt7b, 96, 90, number, 1, poisonInk);
-    fancyText(FreeSans9pt7b, 96, 117, "POISON", 1, poisonInk);
+    // Four persistent rows. Icons are contained in the native 360px artwork,
+    // while the labels and the changing values remain real text on the device.
+    struct StatRow {
+        MtgCounter counter;
+        const char *name;
+        int value;
+        int top;
+    };
+    const StatRow rows[] = {
+        {MtgCounter::Poison, "POISON", view.poison, 49},
+        {MtgCounter::Rad, "RAD", view.rad, 91},
+        {MtgCounter::Damage, "DAMAGE", view.damage, 133},
+        {MtgCounter::Deaths, "DEATHS", view.deaths, 176}
+    };
+    for (const StatRow &row : rows) {
+        const uint16_t ink = view.selected == row.counter ? accent : white;
+        textInPanel({204, row.top + 3, 79, 24},
+                    row.name, FreeSans9pt7b, label);
+        std::snprintf(number, sizeof(number), "%d", row.value);
+        textInPanel({285, row.top + 1, 35, 27},
+                    number, FreeSans18pt7b, ink);
+    }
 
-    std::snprintf(number, sizeof(number), "%d", view.rad);
-    fancyText(FreeSans18pt7b, 264, 90, number, 1, radInk);
-    fancyText(FreeSans9pt7b, 264, 117, "RAD", 1, radInk);
-
-    std::snprintf(number, sizeof(number), "%d", view.damage);
-    fancyText(FreeSans18pt7b, 78, 181, number, 1, damageInk);
-    fancyText(FreeSans9pt7b, 78, 207, "DAMAGE", 1, damageInk);
-
-    std::snprintf(number, sizeof(number), "%d", view.deaths);
-    fancyText(FreeSans18pt7b, 282, 181, number, 1, deathsInk);
-    fancyText(FreeSans9pt7b, 282, 207, "DEATHS", 1, deathsInk);
-
-    // The commander bar is only ~65px tall. Put captions above each value,
-    // not horizontally on the same baseline as the tall glyphs.
-    fancyText(FreeSans9pt7b, 180, 259, "COMMANDER", 1, kGold);
-    fancyText(FreeSans9pt7b, 109, 279, "CASTS", 1, castsInk);
+    // Keep the exact approved lower-bar treatment: stacked-card icon for
+    // CASTS and gold triple-chevron icon for TAX are baked into the art.
+    // Casts is editable; next-cast tax = 2 * the number of previous casts.
+    textInPanel({104, 238, 161, 22}, "COMMANDER",
+                FreeSans9pt7b, white);
+    textInPanel({111, 267, 68, 17}, "CASTS",
+                FreeSans9pt7b, label);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    fancyText(FreeSans18pt7b, 150, 307, number, 1, castsInk);
-    fancyText(FreeSans9pt7b, 214, 279, "TAX", 1, castsInk);
-    std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    fancyText(FreeSans18pt7b, 261, 307, number, 1, castsInk);
+    textInPanel({114, 285, 64, 28}, number, FreeSans18pt7b,
+                view.selected == MtgCounter::Casts ? accent : white);
 
-    // No footer below the command bar: it overlaps the circular border.
-    // The active deck is visible in the crown's deck chooser.
+    textInPanel({236, 267, 70, 17}, "TAX", FreeSans9pt7b, label);
+    std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
+    textInPanel({237, 285, 68, 28}, number, FreeSans18pt7b, white);
 }
 
 void drawShell() {
