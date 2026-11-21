@@ -316,6 +316,20 @@ void knobStep(int direction) {
 
 void tap(int x, int y) {
     if (gDecks.empty()) return;
+    if (gView.screen == MtgScreen::ConfirmReset) {
+        // Two distinct buttons; only a deliberate left-side tap resets.
+        if (x < 180 && y >= 175 && y <= 265) {
+            gView.life = 40;
+            gView.poison = gView.rad = gView.damage = gView.casts = gView.deaths = 0;
+            gView.selected = MtgCounter::Life;
+            gDirty = true;
+            gLastChange = esp_timer_get_time();
+            ESP_LOGI(kTag, "User confirmed new game for %s", gView.deckId);
+        }
+        gView.screen = MtgScreen::Dashboard;
+        publish();
+        return;
+    }
     if (gView.screen == MtgScreen::ChooseDeck) {
         selectDeck(gView.deckIndex);
         return;
@@ -349,6 +363,8 @@ void task(void *) {
     initRotary();
     initTouch();
     bool down = false;
+    bool holdTriggered = false;
+    int64_t touchStarted = 0;
     int touchX = 0, touchY = 0;
     while (true) {
         if (gReloadPending.exchange(false)) {
@@ -360,10 +376,22 @@ void task(void *) {
 
         int x = 0, y = 0;
         const bool currentlyDown = touchPoint(x, y);
+        if (currentlyDown && !down) {
+            touchStarted = esp_timer_get_time();
+            holdTriggered = false;
+        }
         if (currentlyDown) {
             touchX = x; touchY = y;
+            // Long hold over LIFE starts a *confirmation*, never an instant reset.
+            if (!holdTriggered && gView.screen == MtgScreen::Dashboard &&
+                x >= 120 && x <= 240 && y >= 140 && y <= 245 &&
+                esp_timer_get_time() - touchStarted >= 1800000) {
+                gView.screen = MtgScreen::ConfirmReset;
+                holdTriggered = true;
+                publish();
+            }
         }
-        if (!currentlyDown && down)
+        if (!currentlyDown && down && !holdTriggered)
             tap(touchX, touchY);
         down = currentlyDown;
 
