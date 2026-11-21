@@ -391,38 +391,37 @@ void drawDashboard(const MtgGameView &view) {
     // Native 24pt FreeSerif. Never double bitmap pixels for the main life
     // number: that produced blocky digits and crossed the HUD boundaries.
     std::snprintf(number, sizeof(number), "%d", view.life);
-    fancyText(FreeSerif24pt7b, 180, 202, number, 1, lifeInk);
-    fancyText(FreeSans9pt7b, 180, 235, "LIFE", 1, lifeInk);
+    fancyText(FreeSerif24pt7b, 180, 190, number, 1, lifeInk);
+    fancyText(FreeSans9pt7b, 180, 218, "LIFE", 1, lifeInk);
 
     std::snprintf(number, sizeof(number), "%d", view.poison);
-    fancyText(FreeSans18pt7b, 96, 104, number, 1, poisonInk);
-    fancyText(FreeSans9pt7b, 96, 129, "POISON", 1, poisonInk);
+    fancyText(FreeSans18pt7b, 96, 90, number, 1, poisonInk);
+    fancyText(FreeSans9pt7b, 96, 117, "POISON", 1, poisonInk);
 
     std::snprintf(number, sizeof(number), "%d", view.rad);
-    fancyText(FreeSans18pt7b, 264, 104, number, 1, radInk);
-    fancyText(FreeSans9pt7b, 264, 129, "RAD", 1, radInk);
+    fancyText(FreeSans18pt7b, 264, 90, number, 1, radInk);
+    fancyText(FreeSans9pt7b, 264, 117, "RAD", 1, radInk);
 
     std::snprintf(number, sizeof(number), "%d", view.damage);
-    fancyText(FreeSans18pt7b, 78, 198, number, 1, damageInk);
-    fancyText(FreeSans9pt7b, 78, 226, "DAMAGE", 1, damageInk);
+    fancyText(FreeSans18pt7b, 78, 181, number, 1, damageInk);
+    fancyText(FreeSans9pt7b, 78, 207, "DAMAGE", 1, damageInk);
 
     std::snprintf(number, sizeof(number), "%d", view.deaths);
-    fancyText(FreeSans18pt7b, 282, 198, number, 1, deathsInk);
-    fancyText(FreeSans9pt7b, 282, 226, "DEATHS", 1, deathsInk);
+    fancyText(FreeSans18pt7b, 282, 181, number, 1, deathsInk);
+    fancyText(FreeSans9pt7b, 282, 207, "DEATHS", 1, deathsInk);
 
     // The commander bar is only ~65px tall. Put captions above each value,
     // not horizontally on the same baseline as the tall glyphs.
-    fancyText(FreeSans9pt7b, 180, 272, "COMMANDER", 1, kGold);
-    fancyText(FreeSans9pt7b, 109, 291, "CASTS", 1, castsInk);
+    fancyText(FreeSans9pt7b, 180, 259, "COMMANDER", 1, kGold);
+    fancyText(FreeSans9pt7b, 109, 279, "CASTS", 1, castsInk);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    fancyText(FreeSans18pt7b, 150, 318, number, 1, castsInk);
-    fancyText(FreeSans9pt7b, 214, 291, "TAX", 1, castsInk);
+    fancyText(FreeSans18pt7b, 150, 307, number, 1, castsInk);
+    fancyText(FreeSans9pt7b, 214, 279, "TAX", 1, castsInk);
     std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    fancyText(FreeSans18pt7b, 261, 318, number, 1, castsInk);
+    fancyText(FreeSans18pt7b, 261, 307, number, 1, castsInk);
 
-    char deck[22]{};
-    std::snprintf(deck, sizeof(deck), "%.17s", view.deckName);
-    fancyText(FreeSans9pt7b, 180, 343, deck, 1, kIvory);
+    // No footer below the command bar: it overlaps the circular border.
+    // The active deck is visible in the crown's deck chooser.
 }
 
 void drawShell() {
