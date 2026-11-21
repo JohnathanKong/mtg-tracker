@@ -8,6 +8,9 @@
 
 #include "mtg_display.h"
 #include "panel_init_commands.h"
+#include "fonts/FreeSans9pt7b.h"
+#include "fonts/FreeSans18pt7b.h"
+#include "fonts/FreeSerif24pt7b.h"
 
 #include <algorithm>
 #include <cctype>
@@ -277,29 +280,58 @@ void printCentered(int y, const char *value, int scale, uint16_t ink) {
     printAt(180, y, value, scale, ink);
 }
 
+// Proportional, real raster font assets, not scaled-up 5x7 placeholders.
+// Font metrics and bitmap data are from the Adafruit GFX FreeFont set.
+void fancyText(const GFXfont &font, int centerX, int baseline,
+               const char *text, int magnification, uint16_t ink) {
+    int span = 0;
+    for (const unsigned char *c = reinterpret_cast<const unsigned char *>(text);
+         *c; ++c) {
+        if (*c >= font.first && *c <= font.last)
+            span += font.glyph[*c - font.first].xAdvance * magnification;
+    }
+    int cursor = centerX - span / 2;
+    for (const unsigned char *c = reinterpret_cast<const unsigned char *>(text);
+         *c; ++c) {
+        if (*c < font.first || *c > font.last) continue;
+        const GFXglyph &glyph = font.glyph[*c - font.first];
+        const int w = glyph.width, h = glyph.height;
+        const uint8_t *bits = font.bitmap + glyph.bitmapOffset;
+        int bitIndex = 0;
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x, ++bitIndex) {
+                if (!(bits[bitIndex >> 3] & (0x80 >> (bitIndex & 7)))) continue;
+                fillRect(cursor + (glyph.xOffset + x) * magnification,
+                         baseline + (glyph.yOffset + y) * magnification,
+                         magnification, magnification, ink);
+            }
+        }
+        cursor += glyph.xAdvance * magnification;
+    }
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     drawGameSkin();
 
     if (view.deckCount == 0) {
-        printCentered(154, "NO DECKS", 3, kIvory);
-        printCentered(201, "SYNC FROM DESKTOP", 1, kGold);
+        fancyText(FreeSans18pt7b, 180, 166, "NO DECKS", 1, kIvory);
+        fancyText(FreeSans9pt7b, 180, 211, "SYNC FROM DESKTOP", 1, kGold);
         return;
     }
 
     if (view.screen == MtgScreen::ChooseDeck) {
-        printCentered(51, "SELECT DECK", 2, kGold);
-        // Translucent, deliberately dark central overlay on the art asset.
-        fillRect(59, 115, 242, 147, kBg);
+        fancyText(FreeSans18pt7b, 180, 82, "SELECT DECK", 1, kGold);
+        fillRect(58, 122, 244, 135, kBg);
         char number[32];
         std::snprintf(number, sizeof(number), "%d / %d",
                       view.deckIndex + 1, view.deckCount);
-        printCentered(126, number, 2, kTeal);
+        fancyText(FreeSans18pt7b, 180, 165, number, 1, kTeal);
         char deck[25]{};
-        std::snprintf(deck, sizeof(deck), "%.21s", view.deckName);
-        printCentered(164, deck, 2, kIvory);
-        printCentered(220, "TAP TO PLAY", 2, kGold);
-        printCentered(286, "TURN KNOB TO CHOOSE", 1, kMuted);
+        std::snprintf(deck, sizeof(deck), "%.17s", view.deckName);
+        fancyText(FreeSans9pt7b, 180, 202, deck, 1, kIvory);
+        fancyText(FreeSans9pt7b, 180, 238, "TAP TO PLAY", 1, kGold);
+        fancyText(FreeSans9pt7b, 180, 303, "TURN KNOB TO CHOOSE", 1, kMuted);
         return;
     }
 
@@ -312,43 +344,40 @@ void drawDashboard(const MtgGameView &view) {
 
     char number[24]{};
     std::snprintf(number, sizeof(number), "%d", view.life);
-    int scale = std::strlen(number) > 3 ? 7 : (std::strlen(number) > 2 ? 9 : 12);
-    printCentered(132, number, scale, lifeInk);
-    printCentered(226, "LIFE", 2, lifeInk);
+    const int scale = std::strlen(number) > 2 ? 1 : 2;
+    fancyText(FreeSerif24pt7b, 180, scale == 2 ? 208 : 197,
+              number, scale, lifeInk);
+    fancyText(FreeSans9pt7b, 180, 242, "LIFE", 1, lifeInk);
 
     std::snprintf(number, sizeof(number), "%d", view.poison);
-    printAt(97, 85, number, 4, poisonInk);
-    printAt(97, 119, "POISON", 1, poisonInk);
+    fancyText(FreeSans18pt7b, 99, 106, number, 1, poisonInk);
+    fancyText(FreeSans9pt7b, 99, 134, "POISON", 1, poisonInk);
 
     std::snprintf(number, sizeof(number), "%d", view.rad);
-    printAt(263, 85, number, 4, radInk);
-    printAt(263, 119, "RAD", 1, radInk);
+    fancyText(FreeSans18pt7b, 261, 106, number, 1, radInk);
+    fancyText(FreeSans9pt7b, 261, 134, "RAD", 1, radInk);
 
     std::snprintf(number, sizeof(number), "%d", view.damage);
-    printAt(78, 177, number, 4, damageInk);
-    printAt(78, 215, "CMD", 1, damageInk);
-    printAt(78, 225, "DAMAGE", 1, damageInk);
+    fancyText(FreeSans18pt7b, 72, 211, number, 1, damageInk);
+    fancyText(FreeSans9pt7b, 72, 236, "DAMAGE", 1, damageInk);
 
     std::snprintf(number, sizeof(number), "%d", view.deaths);
-    printAt(282, 177, number, 4, deathsInk);
-    printAt(282, 215, "CMD", 1, deathsInk);
-    printAt(282, 225, "DEATHS", 1, deathsInk);
+    fancyText(FreeSans18pt7b, 288, 211, number, 1, deathsInk);
+    fancyText(FreeSans9pt7b, 288, 236, "DEATHS", 1, deathsInk);
 
-    // Commander tax after n casts is 2*n extra for the NEXT cast.
-    const int nextTax = view.casts * 2;
-    printAt(180, 260, "COMMANDER", 1, kGold);
+    fancyText(FreeSans9pt7b, 180, 270, "COMMANDER", 1, kGold);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    printAt(155, 275, number, 3, castsInk);
-    printAt(112, 302, "CASTS", 1, castsInk);
-    std::snprintf(number, sizeof(number), "+%d", nextTax);
-    printAt(259, 278, number, 2, castsInk);
-    printAt(221, 302, "TAX", 1, castsInk);
+    fancyText(FreeSans18pt7b, 150, 303, number, 1, castsInk);
+    fancyText(FreeSans9pt7b, 105, 304, "CASTS", 1, castsInk);
+    std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
+    fancyText(FreeSans18pt7b, 272, 303, number, 1, castsInk);
+    fancyText(FreeSans9pt7b, 214, 304, "TAX", 1, castsInk);
 
-    // Keep the on-device UI legible even with long user-defined deck names.
-    char deck[31]{};
-    std::snprintf(deck, sizeof(deck), "%.28s", view.deckName);
-    printCentered(325, deck, 1, kIvory);
-    printCentered(339, "TAP A STAT - TURN KNOB", 1, kMuted);
+    // The uploaded image is the panel background; the deck name is a
+    // compact footer, not another large block on top of the character.
+    char deck[22]{};
+    std::snprintf(deck, sizeof(deck), "%.17s", view.deckName);
+    fancyText(FreeSans9pt7b, 180, 342, deck, 1, kIvory);
 }
 
 void drawShell() {
