@@ -87,9 +87,8 @@ constexpr uint16_t kTrack    = color(53, 69, 81);
 
 inline void pixel(int x, int y, uint16_t ink);
 
-// Actual image-generated portrait/list HUD asset (with empty text regions).
-// Bytes: native 360x360 256-color palette and LZ4-compressed palette indices.
-// User-supplied commander art and game numbers are drawn separately at runtime.
+// Asset: 360x360 antialiased RGBA palette, 4-bit packed pixels and LZ4 block.
+// Chrome and decoration contain no baked-in commander art or changing values.
 constexpr size_t kPaletteByteSize = 16 * 4;
 
 
@@ -460,12 +459,6 @@ void drawPagination(int current, int total, int y) {
                   n == current ? kGold : color(85, 92, 103));
     }
 }
-void drawPlusNavigation(int cx, int cy) {
-    fillRound(cx - 13, cy - 13, 26, 26, 13, kGold);
-    fillRound(cx - 11, cy - 11, 22, 22, 11, kBg);
-    fillRect(cx - 6, cy - 1, 13, 2, kGold);
-    fillRect(cx - 1, cy - 6, 2, 13, kGold);
-}
 uint16_t accentFor(uint8_t type) {
     switch (type) {
     case 0: return color(229, 170, 96); // Commander deaths
@@ -473,14 +466,6 @@ uint16_t accentFor(uint8_t type) {
     case 2: return color(82, 199, 180); // Experience / poison
     case 3: return color(105, 170, 224); // Treasure / rad
     default: return color(179, 136, 220);
-    }
-}
-void drawTinyMark(int centerX, int centerY, uint16_t accent) {
-    // Diamond glyph without fragile Unicode font assumptions.
-    for (int dy = -5; dy <= 5; ++dy) {
-        const int span = 5 - std::abs(dy);
-        pixel(centerX - span, centerY + dy, accent);
-        pixel(centerX + span, centerY + dy, accent);
     }
 }
 // The antialiased text implementation is below the geometry helpers.
@@ -591,48 +576,48 @@ void drawDashboard(const MtgGameView &view) {
 
     if (view.deckCount == 0) {
         chromePanel(58, 132, 244, 103, 16, kGold, kSurface);
-        textInPanel({72, 147, 216, 32}, "NO DECKS", FreeSans18pt7b, kIvory);
-        textInPanel({68, 188, 224, 24}, "SYNC FROM DESKTOP", FreeSans9pt7b, kTeal);
+        aaText({72, 147, 216, 32}, "NO DECKS", FreeSans18pt7b, 24, kIvory);
+        aaText({68, 188, 224, 24}, "SYNC FROM DESKTOP", FreeSans18pt7b, 13, kTeal);
         return;
     }
 
     if (view.screen == MtgScreen::ChooseDeck) {
         chromePanel(44, 115, 272, 156, 17, kGold, kBg);
-        textInPanel({60, 124, 240, 25}, "SELECT DECK", FreeSans18pt7b, kGold);
+        aaText({60, 124, 240, 25}, "SELECT DECK", FreeSans18pt7b, 19, kGold);
         char position[32];
         std::snprintf(position, sizeof(position), "%d / %d",
                       view.deckIndex + 1, view.deckCount);
-        textInPanel({80, 160, 200, 33}, position, FreeSans18pt7b, kTeal);
+        aaText({80, 160, 200, 33}, position, FreeSans18pt7b, 25, kTeal);
         char name[32];
         std::snprintf(name, sizeof(name), "%.28s", view.deckName);
-        textInPanel({62, 210, 236, 25}, name, FreeSans9pt7b, kIvory);
+        aaText({62, 210, 236, 25}, name, FreeSans18pt7b, 16, kIvory);
         drawPagination(view.deckIndex, view.deckCount, 292);
         return;
     }
 
     if (view.screen == MtgScreen::ConfirmReset) {
         chromePanel(45, 110, 270, 164, 17, kGold, kBg);
-        textInPanel({64, 126, 232, 32}, "NEW GAME?", FreeSans18pt7b, kGold);
-        textInPanel({56, 162, 248, 25}, "RESET ALL COUNTERS", FreeSans9pt7b, kIvory);
+        aaText({64, 126, 232, 32}, "NEW GAME?", FreeSans18pt7b, 22, kGold);
+        aaText({56, 162, 248, 25}, "RESET ALL COUNTERS", FreeSans18pt7b, 12, kIvory);
         chromePanel(73, 196, 102, 51, 11, kGold, kGoldDim);
         chromePanel(184, 196, 102, 51, 11, kTeal, kSurface);
-        textInPanel({78, 204, 92, 33}, "RESET", FreeSans9pt7b, kIvory);
-        textInPanel({189, 204, 92, 33}, "CANCEL", FreeSans9pt7b, kIvory);
+        aaText({78, 204, 92, 33}, "RESET", FreeSans18pt7b, 15, kIvory);
+        aaText({189, 204, 92, 33}, "CANCEL", FreeSans18pt7b, 15, kIvory);
         return;
     }
 
     if (view.screen == MtgScreen::AddCounter) {
         chromePanel(36, 72, 288, 244, 19, kGold, kBg);
-        textInPanel({69, 79, 222, 23}, "ADD COUNTER", FreeSans18pt7b, kGold);
+        aaText({69, 79, 222, 23}, "ADD COUNTER", FreeSans18pt7b, 19, kGold);
         for (int i = 0; i < view.choiceCount; ++i) {
             const int y = 104 + i * 48;
             chromePanel(55, y, 250, 40, 10,
                         color(93, 160, 158), kSurface);
-            textInPanel({66, y + 6, 227, 28},
-                        view.choices[i].label, FreeSans9pt7b, kIvory);
+            aaText({66, y + 6, 227, 28},
+                   view.choices[i].label, FreeSans18pt7b, 15, kIvory);
         }
         drawPagination(view.addPage, view.addPageCount, 310);
-        textInPanel({135, 318, 90, 18}, "BACK", FreeSans9pt7b, kGold);
+        aaText({135, 318, 90, 18}, "BACK", FreeSans18pt7b, 12, kGold);
         return;
     }
 
@@ -802,7 +787,7 @@ bool initDisplayHardware() {
     gSkin = static_cast<uint8_t *>(heap_caps_malloc(
         360 * 360 / 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (gSkin && !decodeSkin()) {
-        ESP_LOGE(kTag, "Bundled fantasy image asset invalid");
+        ESP_LOGE(kTag, "Bundled antialiased ornate chrome asset invalid");
         heap_caps_free(gSkin);
         gSkin = nullptr;
     }
