@@ -790,7 +790,7 @@ void drawNativeCircle() {
     // Single continuous gold circle, with antialiasing at its edges.
     // 1.9px ring is deliberately not split into top and bottom assets.
     for (int y=4;y<356;++y) for (int x=4;x<356;++x) {
-        const float dx=float(x)-179.5f, dy=float(y)-179.5f;
+        const float dx=float(x)-180.0f, dy=float(y)-180.0f;
         const float d=std::sqrt(dx*dx+dy*dy);
         const float coverage=std::clamp(1.25f-std::fabs(d-171.8f),0.0f,1.0f);
         if (coverage>0.0f)
@@ -836,6 +836,11 @@ void drawNativeChrome(const MtgGameView &view) {
     // Bottom decorative flourish sits entirely inside the screen circle.
     drawBezier(69,306,109,312,123,308,145,305,1.4f,172,122,64);
     drawBezier(215,305,237,308,251,312,291,306,1.4f,172,122,64);
+    // No tiny screenshot-embedded lettering: live, complete labels that
+    // remain aligned to the independently rendered shapes.
+    atlasText({64,164,58,21},"CASTS",0,kIvory);
+    atlasText({218,164,41,21},"TAX",0,kIvory);
+    atlasText({93,194,174,16},"COMMANDER DAMAGE",0,kGold);
     drawNativeCircle();
 }
 
