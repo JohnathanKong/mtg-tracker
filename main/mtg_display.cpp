@@ -379,8 +379,38 @@ void textInPanel(TextRect rect, const char *text,
                 rect.y + (rect.h - 7) / 2, text, 1, ink);
         return;
     }
-    const int originX = rect.x + (rect.w - e.width()) / 2 - e.x0;
+    int originX = rect.x + (rect.w - e.width()) / 2 - e.x0;
     const int baseline = rect.y + (rect.h - e.height()) / 2 - e.y0;
+
+    // The screen is round. A value can fit a rectangular capsule yet still
+    // cross the physical circular edge, especially the top-right POISON row.
+    // Reposition the full rendered glyph bounds *before* drawing instead of
+    // relying on frame clipping (which chops off the digits).
+    constexpr int kTextSafeRadius = 168; // 12 px inside the 180 px edge
+    auto fitsRoundScreen = [&](int shift) {
+        const int l = originX + e.x0 + shift;
+        const int r = originX + e.x1 - 1 + shift;
+        const int t = baseline + e.y0;
+        const int b = baseline + e.y1 - 1;
+        if (l < rect.x || r >= rect.x + rect.w) return false;
+        const int xs[] = {l, r};
+        const int ys[] = {t, b};
+        for (int x : xs) for (int y : ys) {
+            const int dx = x - 180, dy = y - 180;
+            if (dx * dx + dy * dy > kTextSafeRadius * kTextSafeRadius)
+                return false;
+        }
+        return true;
+    };
+    if (!fitsRoundScreen(0)) {
+        const int inward = rect.x + rect.w / 2 >= 180 ? -1 : 1;
+        for (int px = 1; px <= rect.w / 2; ++px) {
+            if (fitsRoundScreen(inward * px)) {
+                originX += inward * px;
+                break;
+            }
+        }
+    }
     int pen = originX;
     for (const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
          *p; ++p) {
@@ -481,7 +511,7 @@ void drawDashboard(const MtgGameView &view) {
         // Label and number have their own inset regions. In particular, the
         // top right capsule sits close to the ROUND screen boundary: x=320
         // was physically cut off there, even though it fit a square preview.
-        textInPanel({199, row.top + 3, 78, 24},
+        textInPanel({201, row.top + 3, 77, 24},
                     row.name, FreeSans9pt7b, label);
         std::snprintf(number, sizeof(number), "%d", row.value);
         textInPanel({270, row.top + 7, 28, 25},
