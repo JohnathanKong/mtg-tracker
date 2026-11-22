@@ -616,11 +616,11 @@ void softCapsule(int x, int y, int w, int h, int radius,
         for (int px = 0; px < w; ++px) {
             const float qx = std::fabs(float(px) + 0.5f - halfW) - (halfW - r);
             const float qy = std::fabs(float(py) + 0.5f - halfH) - (halfH - r);
-            const float outsideX = std::max(0.0f, qx);
-            const float outsideY = std::max(0.0f, qy);
-            const float dist = std::sqrt(outsideX * outsideX +
-                                         outsideY * outsideY) +
-                               std::min(0.0f, std::max(qx, qy)) - r;
+            const float dist = (qx > 0.0f && qy > 0.0f) ?
+                std::sqrt(qx * qx + qy * qy) - r :
+                std::max(qx, qy) - r;
+            // Almost all pixels lie on straight sides/interiors. Only
+            // the rounded corners need an expensive sqrt on the ESP32-S3.
             const float coverage = std::clamp(0.65f - dist, 0.0f, 1.0f);
             if (coverage <= 0) continue;
             blendInk(x + px, y + py,
@@ -1044,10 +1044,21 @@ DirtyRows calculateDamage(const PendingStatus &before,
     if (!hadFrame || !before.gameMode || !after.gameMode)
         return DirtyRows::full();
     const MtgGameView &a = before.game, &b = after.game;
-    if (a.screen != b.screen || a.deckCount != b.deckCount ||
+    if (a.deckCount != b.deckCount ||
         a.artworkRevision != b.artworkRevision ||
         std::strcmp(a.deckId, b.deckId) != 0)
         return DirtyRows::full();
+    if (a.screen != b.screen) {
+        DirtyRows dirty;
+        // The modal lives entirely below the artwork header. Opening and
+        // closing it never require retransmitting the upper display rows.
+        if ((a.screen == MtgScreen::Dashboard && b.screen == MtgScreen::EditCounters) ||
+            (b.screen == MtgScreen::Dashboard && a.screen == MtgScreen::EditCounters)) {
+            dirty.add(71,337);
+            return dirty;
+        }
+        return DirtyRows::full();
+    }
 
     DirtyRows dirty;
     if (b.screen == MtgScreen::EditCounters) {
