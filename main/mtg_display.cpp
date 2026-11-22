@@ -48,8 +48,8 @@ uint8_t *gFontRaw = nullptr;    // unpacked 4-bit AA glyph atlas, PSRAM
 char gLoadedArtId[96] = {};
 uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
-extern "C" const uint8_t skin_start[] asm("_binary_ui_reference_chrome_360_lz4_start");
-extern "C" const uint8_t skin_end[] asm("_binary_ui_reference_chrome_360_lz4_end");
+extern "C" const uint8_t skin_start[] asm("_binary_ui_reference_chrome_256_lz4_start");
+extern "C" const uint8_t skin_end[] asm("_binary_ui_reference_chrome_256_lz4_end");
 extern "C" const uint8_t font_start[] asm("_binary_ui_font_atlas_lz4_start");
 extern "C" const uint8_t font_end[] asm("_binary_ui_font_atlas_lz4_end");
 
@@ -92,7 +92,7 @@ inline void pixel(int x, int y, uint16_t ink);
 
 // Asset: 360x360 antialiased 32-color RGBA palette and LZ4 pixels.
 // Chrome and decoration contain no baked-in commander art or changing values.
-constexpr size_t kPaletteByteSize = 32 * 4;
+constexpr size_t kPaletteByteSize = 256 * 3;
 
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
@@ -145,7 +145,7 @@ bool decodeLz4(const uint8_t *src, const uint8_t *end,
 
 bool decodeSkin() {
     return gSkin && size_t(skin_end - skin_start) > kPaletteByteSize &&
-           decodeLz4(skin_start + kPaletteByteSize, skin_end, gSkin, 360u * 360u);
+           decodeLz4(skin_start + kPaletteByteSize, skin_end, gSkin, 360u * 360u * 2u);
 }
 
 // Noto Serif Display glyphs were rasterized with FreeType at 4x resolution,
@@ -268,10 +268,11 @@ void applyOrnateSkin(const MtgGameView &view) {
                  x >= 217 && x <= 286 ? 2 : -1) : -1;
             if (player >= 0 && !view.damageIndices[player]) continue;
             const size_t off = size_t(y) * 360u + size_t(x);
-            const uint8_t idx = gSkin[off];
-            if (idx >= 32) continue;
-            const uint8_t *rgba = skin_start + idx * 4u;
-            if (rgba[3]) blendInk(x, y, rgba[0], rgba[1], rgba[2], rgba[3]);
+            const uint8_t index = gSkin[off * 2u];
+            const uint8_t alpha = gSkin[off * 2u + 1u];
+            if (!alpha) continue;
+            const uint8_t *rgb = skin_start + size_t(index) * 3u;
+            blendInk(x, y, rgb[0], rgb[1], rgb[2], alpha);
         }
     }
 }
@@ -951,7 +952,7 @@ bool initDisplayHardware() {
     gArt = static_cast<uint16_t *>(heap_caps_malloc(
         360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gSkin = static_cast<uint8_t *>(heap_caps_malloc(
-        360 * 360, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!initAaFonts())
         ESP_LOGW(kTag, "Antialiased serif font atlas unavailable; using GFX fallback");
     if (gSkin && !decodeSkin()) {
