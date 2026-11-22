@@ -35,15 +35,54 @@ constexpr gpio_num_t kClockwise = GPIO_NUM_8;
 constexpr gpio_num_t kCounterclockwise = GPIO_NUM_7;
 constexpr char kDeckJson[] = "/mtg/decks.json";
 
+struct CounterDef { std::string id, label; };
 struct DeckMeta {
     std::string id, name, commander;
+    std::vector<CounterDef> defaults, custom;
 };
+struct ActiveCounter {
+    std::string id, label;
+    int value = 0;
+    bool temporary = false;
+};
+constexpr size_t kMaxActiveCounters = 24;
+struct StoredCounter {
+    uint32_t idHash = 0;
+    int32_t value = 0;
+    uint8_t temporary = 0;
+    uint8_t padding[3]{};
+};
+struct StoredCounters {
+    uint32_t magic = 0x4D543243;
+    uint32_t count = 0;
+    StoredCounter items[kMaxActiveCounters]{};
+};
+const CounterDef kCatalog[] = {
+    {"commander_deaths", "Commander Deaths"}, {"commander_damage", "Commander Damage"},
+    {"poison", "Poison"}, {"rad", "Radiation"}, {"experience", "Experience"},
+    {"energy", "Energy"}, {"treasures", "Treasures"}, {"storm", "Storm"},
+    {"tickets", "Tickets"}, {"speed", "Speed"}, {"ring", "Ring Temptation"},
+    {"dungeon", "Dungeon"}, {"monarch", "Monarch"}, {"initiative", "Initiative"},
+    {"citys_blessing", "City Blessing"}, {"day_night", "Day Night"},
+    {"emblems", "Emblems"}, {"mana_pool", "Mana Pool"}, {"turn", "Turn"}
+};
+bool isPermanent(const std::string &id) {
+    return id == "life" || id == "commander_casts";
+}
+std::string labelFor(const std::string &id) {
+    for (const auto &item : kCatalog)
+        if (item.id == id) return item.label;
+    return id;
+}
 struct Saved {
     uint32_t magic = 0x4D544731; // MTG1
     int32_t life = 40, poison = 0, rad = 0, damage = 0, casts = 0, deaths = 0;
 };
 
 std::vector<DeckMeta> gDecks;
+std::vector<ActiveCounter> gTrackers;
+std::vector<CounterDef> gAvailable;
+int gActiveTracker = -1;
 MtgGameView gView;
 portMUX_TYPE gViewLock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t gRotaryEvents = nullptr;
