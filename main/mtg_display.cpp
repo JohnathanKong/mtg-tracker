@@ -531,108 +531,89 @@ void drawCounterTile(int x, int y, int w, int h, const MtgTile &tile) {
 
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
-    drawGameSkin();
+    drawHeroArt();
 
-    // The entire round face remains legible even without a synced artwork.
     if (view.deckCount == 0) {
-        textInPanel({42, 134, 276, 40}, "NO DECKS",
-                    FreeSans18pt7b, kIvory);
-        textInPanel({40, 184, 280, 24}, "SYNC FROM DESKTOP",
-                    FreeSans9pt7b, kTeal);
-        return;
-    }
-
-    if (view.screen == MtgScreen::ConfirmReset) {
-        fillRect(48, 105, 264, 169, kBg);
-        textInPanel({60, 116, 240, 35}, "NEW GAME?",
-                    FreeSans18pt7b, kGold);
-        textInPanel({61, 159, 238, 22}, "RESET ALL COUNTERS",
-                    FreeSans9pt7b, kIvory);
-        borderBox(73, 196, 102, 51, kGold, kGoldDim);
-        borderBox(184, 196, 102, 51, kTeal, kSurface);
-        textInPanel({75, 200, 97, 41}, "RESET",
-                    FreeSans9pt7b, kIvory);
-        textInPanel({187, 200, 95, 41}, "CANCEL",
-                    FreeSans9pt7b, kIvory);
+        chromePanel(58, 132, 244, 103, 16, kGold, kSurface);
+        textInPanel({72, 147, 216, 32}, "NO DECKS", FreeSans18pt7b, kIvory);
+        textInPanel({68, 188, 224, 24}, "SYNC FROM DESKTOP", FreeSans9pt7b, kTeal);
         return;
     }
 
     if (view.screen == MtgScreen::ChooseDeck) {
-        fillRect(48, 90, 264, 185, kBg);
-        textInPanel({58, 101, 244, 34}, "SELECT DECK",
-                    FreeSans18pt7b, kGold);
-        char deckNumber[30];
-        std::snprintf(deckNumber, sizeof(deckNumber), "%d / %d",
+        chromePanel(44, 115, 272, 156, 17, kGold, kBg);
+        textInPanel({60, 124, 240, 25}, "SELECT DECK", FreeSans18pt7b, kGold);
+        char position[32];
+        std::snprintf(position, sizeof(position), "%d / %d",
                       view.deckIndex + 1, view.deckCount);
-        textInPanel({64, 143, 232, 29}, deckNumber, FreeSans18pt7b, kTeal);
-        char deck[27]{};
-        std::snprintf(deck, sizeof(deck), "%.24s", view.deckName);
-        textInPanel({55, 187, 250, 24}, deck, FreeSans9pt7b, kIvory);
-        textInPanel({55, 227, 250, 24}, "TAP TO PLAY",
-                    FreeSans9pt7b, kGold);
+        textInPanel({80, 160, 200, 33}, position, FreeSans18pt7b, kTeal);
+        char name[32];
+        std::snprintf(name, sizeof(name), "%.28s", view.deckName);
+        textInPanel({62, 210, 236, 25}, name, FreeSans9pt7b, kIvory);
+        drawPagination(view.deckIndex, view.deckCount, 292);
         return;
     }
 
-    if (!gHasArt) {
-        // Explicitly distinguish missing per-deck artwork from the decorative
-        // blank HUD. Firmware flashing alone cannot transfer desktop images.
-        textInPanel({32, 124, 120, 18}, "SYNC ART",
-                    FreeSans9pt7b, kMuted);
+    if (view.screen == MtgScreen::ConfirmReset) {
+        chromePanel(45, 110, 270, 164, 17, kGold, kBg);
+        textInPanel({64, 126, 232, 32}, "NEW GAME?", FreeSans18pt7b, kGold);
+        textInPanel({56, 162, 248, 25}, "RESET ALL COUNTERS", FreeSans9pt7b, kIvory);
+        chromePanel(73, 196, 102, 51, 11, kGold, kGoldDim);
+        chromePanel(184, 196, 102, 51, 11, kTeal, kSurface);
+        textInPanel({78, 204, 92, 33}, "RESET", FreeSans9pt7b, kIvory);
+        textInPanel({189, 204, 92, 33}, "CANCEL", FreeSans9pt7b, kIvory);
+        return;
     }
 
-    const uint16_t accent = color(115, 223, 255);
-    const uint16_t white = color(250, 247, 243);
-    const uint16_t label = color(239, 237, 230);
+    if (view.screen == MtgScreen::AddCounter) {
+        chromePanel(36, 72, 288, 244, 19, kGold, kBg);
+        textInPanel({69, 79, 222, 23}, "ADD COUNTER", FreeSans18pt7b, kGold);
+        for (int i = 0; i < view.choiceCount; ++i) {
+            const int y = 104 + i * 48;
+            chromePanel(55, y, 250, 40, 10,
+                        color(93, 160, 158), kSurface);
+            textInPanel({66, y + 6, 227, 28},
+                        view.choices[i].label, FreeSans9pt7b, kIvory);
+        }
+        drawPagination(view.addPage, view.addPageCount, 310);
+        textInPanel({135, 318, 90, 18}, "BACK", FreeSans9pt7b, kGold);
+        return;
+    }
 
+    if (!gHasArt)
+        textInPanel({91, 61, 178, 30}, "SYNC ART", FreeSans18pt7b, kMuted);
+
+    // The permanent numbers never change location when swiping the tile pages.
+    // Casts is editable, Tax is derived as +2 mana per previous cast.
+    chromePanel(28, 184, 304, 39, 15, kGoldDim, color(9, 26, 25));
+    fillRect(179, 198, 1, 17, kGoldDim);
+    textInPanel({49, 193, 70, 19}, "CASTS", FreeSans9pt7b, kIvory);
     char number[24];
-    std::snprintf(number, sizeof(number), "%d", view.life);
-    textInPanel({34, 168, 126, 55}, number,
-                FreeSerif24pt7b,
-                view.selected == MtgCounter::Life ? accent : white);
-    textInPanel({45, 221, 112, 20}, "LIFE", FreeSans9pt7b, accent);
-
-    // Four persistent rows. Icons are contained in the native 360px artwork,
-    // while the labels and the changing values remain real text on the device.
-    struct StatRow {
-        MtgCounter counter;
-        const char *name;
-        int value;
-        int top;
-    };
-    const StatRow rows[] = {
-        {MtgCounter::Poison, "POISON", view.poison, 49},
-        {MtgCounter::Rad, "RAD", view.rad, 91},
-        {MtgCounter::Damage, "DAMAGE", view.damage, 133},
-        {MtgCounter::Deaths, "DEATHS", view.deaths, 176}
-    };
-    for (const StatRow &row : rows) {
-        const uint16_t ink = view.selected == row.counter ? accent : white;
-        // Label and number have their own inset regions. In particular, the
-        // top right capsule sits close to the ROUND screen boundary: x=320
-        // was physically cut off there, even though it fit a square preview.
-        textInPanel({201, row.top + 3, 77, 24},
-                    row.name, FreeSans9pt7b, label);
-        std::snprintf(number, sizeof(number), "%d", row.value);
-        textInPanel({270, row.top + 7, 28, 25},
-                    number, FreeSans18pt7b, ink);
-    }
-
-    // Keep the exact approved lower-bar treatment: stacked-card icon for
-    // CASTS and gold triple-chevron icon for TAX are baked into the art.
-    // Casts is editable; next-cast tax = 2 * the number of previous casts.
-    textInPanel({104, 239, 161, 19}, "COMMANDER",
-                FreeSans9pt7b, white);
-    textInPanel({112, 265, 66, 17}, "CASTS",
-                FreeSans9pt7b, label);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    textInPanel({111, 285, 67, 27}, number, FreeSans18pt7b,
-                view.selected == MtgCounter::Casts ? accent : white);
-
-    textInPanel({237, 265, 57, 17}, "TAX", FreeSans9pt7b, label);
+    textInPanel({124, 189, 53, 28}, number, FreeSans18pt7b,
+                view.selected == MtgCounter::Casts ? kTeal : kIvory);
+    textInPanel({201, 193, 55, 19}, "TAX", FreeSans9pt7b, kIvory);
     std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    textInPanel({230, 285, 62, 27}, number, FreeSans18pt7b, white);
-}
+    textInPanel({264, 189, 56, 28}, number, FreeSans18pt7b, kGold);
 
+    // Life crest sits over the lower part of the artwork as in the reference.
+    chromePanel(110, 111, 140, 84, 21,
+                view.selected == MtgCounter::Life ? kTeal : kGold, color(8, 23, 25));
+    textInPanel({130, 117, 100, 19}, "LIFE", FreeSans9pt7b, kGold);
+    std::snprintf(number, sizeof(number), "%d", view.life);
+    textInPanel({116, 137, 128, 50}, number, FreeSerif24pt7b,
+                view.selected == MtgCounter::Life ? kTeal : kIvory);
+
+    // Exactly four optional counters per page. Their order is defined by
+    // saved desktop preferences and game-only additions.
+    if (view.tileCount > 0) drawCounterTile(31, 230, 146, 33, view.tiles[0]);
+    if (view.tileCount > 1) drawCounterTile(183, 230, 146, 33, view.tiles[1]);
+    if (view.tileCount > 2) drawCounterTile(56, 269, 121, 31, view.tiles[2]);
+    if (view.tileCount > 3) drawCounterTile(183, 269, 121, 31, view.tiles[3]);
+
+    drawPagination(view.page, view.pageCount, 320);
+    drawPlusNavigation(266, 315);
+}
 void drawShell() {
     std::fill(gFrame, gFrame + kWidth * kHeight, kBg);
     // Rings live at the edge of the round screen, not in the corners.
