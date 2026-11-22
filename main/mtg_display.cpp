@@ -45,6 +45,7 @@ uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
 uint8_t *gSkin = nullptr;      // 4-bit packed 360x360 antialiased ornate chrome overlay
 uint8_t *gFontRaw = nullptr;    // unpacked 4-bit AA glyph atlas, PSRAM
+bool gAaReady = false;
 char gLoadedArtId[96] = {};
 uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
@@ -196,7 +197,8 @@ bool initAaFonts() {
             cursor += size;
         }
     }
-    return cursor == end;
+    gAaReady = cursor == end;
+    return gAaReady;
 }
 
 uint32_t crcDeckId(const char *s) {
@@ -641,7 +643,7 @@ const AaGlyph *glyphForAa(const AaFace &font, unsigned char c) {
 }
 void atlasText(TextRect rect, const char *text, int fontSize,
                uint16_t ink) {
-    if (!gFontRaw) {
+    if (!gAaReady) {
         aaText(rect, text, fontSize == 2 ? FreeSerif24pt7b : FreeSans18pt7b,
                fontSize == 2 ? 44 : fontSize == 1 ? 20 : 11, ink);
         return;
