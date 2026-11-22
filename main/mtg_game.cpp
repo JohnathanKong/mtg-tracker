@@ -7,6 +7,7 @@
 // Each input callback updates state; display rendering happens on another task.
 
 #include "mtg_game.h"
+#include "mtg_scroll.h"
 #include "mtg_display.h"
 #include "mtg_rotary.h"
 
@@ -220,16 +221,22 @@ void refreshCounterView() {
     // Avoid building a new full editor catalog for every physical dial tick.
     if (gView.screen != MtgScreen::EditCounters) return;
     refreshAvailable();
-    // A vertical scrolling list with a four-row viewport, not horizontal pages.
-    gView.addPageCount = std::max(1, int(gAvailable.size()) - 3);
-    gView.addPage = std::clamp(gView.addPage, 0, gView.addPageCount - 1);
+    // The list is laid out in physical pixels. Four rows fit; the fifth
+    // is partially visible during a drag instead of jumping by whole rows.
+    gView.editTotalRows = int(gAvailable.size());
+    gView.editMaxScrollPx = mtg_scroll::maxScroll(gView.editTotalRows);
+    gView.editScrollPx = mtg_scroll::clampScroll(
+        gView.editScrollPx, gView.editTotalRows);
+    gView.editFirstRow = mtg_scroll::firstRow(gView.editScrollPx);
+    gView.editRowOffsetPx = mtg_scroll::rowOffset(gView.editScrollPx);
     gView.choiceCount = 0;
     for (auto &choice : gView.choices) choice = MtgMenuChoice{};
-    for (int pos = gView.addPage;
-         pos < int(gAvailable.size()) && pos < gView.addPage + 4; ++pos) {
+    for (int pos = gView.editFirstRow;
+         pos < int(gAvailable.size()) &&
+         pos < gView.editFirstRow + mtg_scroll::kVisibleRows; ++pos) {
         MtgMenuChoice &choice = gView.choices[gView.choiceCount++];
         const CounterDef &definition = gAvailable[size_t(pos)];
-        std::snprintf(choice.label, sizeof(choice.label), "%s",
+        std::snprintf(choice.label,sizeof(choice.label),"%s",
                       definition.label.c_str());
         choice.checked = alreadyActive(definition.id);
     }
@@ -613,10 +620,10 @@ void swipe(int direction, int originY, bool vertical) {
             if (target != gView.page) { gView.page = target; publish(); }
         }
     } else if (gView.screen == MtgScreen::EditCounters) {
-        // Never navigate the editor horizontally: finger swipes scroll rows.
-        if (!vertical) return;
-        const int target = std::clamp(gView.addPage + direction, 0, gView.addPageCount - 1);
-        if (target != gView.addPage) { gView.addPage = target; publish(); }
+        // This screen is not paginated: its scroll position is controlled by
+        // the live touch position in the game task.
+        (void)vertical;
+        return;
     } else if (gView.screen == MtgScreen::ChooseDeck && !gDecks.empty()) {
         int index = (gView.deckIndex + direction) % int(gDecks.size());
         if (index < 0) index += int(gDecks.size());
@@ -686,9 +693,10 @@ void tap(int x, int y) {
             return;
         }
         if (y >= 110 && y < 294 && x >= 55 && x <= 305) {
-            const int row = (y - 110) / 46;
-            const int index = gView.addPage + row;
-            if (row >= 0 && row < 4 && index < int(gAvailable.size())) {
+            const int index = mtg_scroll::tappedIndex(
+                y,gView.editScrollPx,int(gAvailable.size()));
+            const int row = index - gView.editFirstRow;
+            if (index >= 0 && index < int(gAvailable.size())) {
                 const CounterDef item = gAvailable[size_t(index)];
                 int active = -1;
                 for (size_t n = 0; n < gTrackers.size(); ++n)
@@ -758,7 +766,7 @@ void tap(int x, int y) {
     } else if (y >= 256 && y <= 289 && x >= 279 && x <= 321) {
         // The only way to edit the set of optional counters.
         gView.screen = MtgScreen::EditCounters;
-        gView.addPage = 0;
+        gView.editScrollPx = 0;
     } else if (y >= 259 && y <= 288) {
         int tile = -1;
         if (x >= 48 && x <= 156) tile = 0;
