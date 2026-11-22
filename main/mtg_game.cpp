@@ -192,6 +192,30 @@ void refreshCounterView() {
         gView.damageIndices[n] = idx < gOpponentCount ? idx + 1 : 0;
         gView.damageValues[n] = idx < gOpponentCount ? gOpponentDamage[idx] : 0;
     }
+    // Supply the adjacent page's actual live counters during a finger drag.
+    // This avoids waiting for a page-change event before rendering both pages.
+    gView.dragTileCount = 0;
+    gView.dragTargetPage = -1;
+    for (auto &tile : gView.dragTiles) tile = MtgTile{};
+    if (gView.dragActive && gView.dragOffsetPx != 0) {
+        const int neighbor = gView.page + (gView.dragOffsetPx < 0 ? 1 : -1);
+        if (neighbor >= 0 && neighbor < gView.pageCount) {
+            gView.dragTargetPage = neighbor;
+            for (int pos = neighbor * 2;
+                 pos < int(gTrackers.size()) && pos < neighbor * 2 + 2; ++pos) {
+                const ActiveCounter &entry = gTrackers[size_t(pos)];
+                MtgTile &tile = gView.dragTiles[gView.dragTileCount++];
+                std::snprintf(tile.label, sizeof(tile.label), "%s", entry.label.c_str());
+                tile.value = entry.value;
+                tile.selected = false;
+                if (entry.id == "commander_deaths") tile.accent = 0;
+                else if (entry.id == "commander_damage") tile.accent = 1;
+                else if (entry.id == "experience" || entry.id == "poison") tile.accent = 2;
+                else if (entry.id == "treasures" || entry.id == "rad") tile.accent = 3;
+                else tile.accent = 4;
+            }
+        }
+    }
     gView.selectedTrackerCount = int(gTrackers.size());
     // Avoid building a new full editor catalog for every physical dial tick.
     if (gView.screen != MtgScreen::EditCounters) return;
@@ -764,6 +788,8 @@ void task(void *) {
     int64_t touchStarted = 0;
     int touchX = 0, touchY = 0;
     int startX = 0, startY = 0;
+    bool draggingCounterPages = false;
+    int64_t lastDragDrawUs = 0;
     while (true) {
         if (gReloadPending.exchange(false)) {
             loadDecksFromFlash();
@@ -778,9 +804,36 @@ void task(void *) {
             touchStarted = esp_timer_get_time();
             startX = x; startY = y;
             holdTriggered = false;
+            draggingCounterPages = false;
         }
         if (currentlyDown) {
             touchX = x; touchY = y;
+            // The bottom counter carousel tracks the finger in real time.
+            // Leave the Edit pencil and the permanent damage row untouched.
+            if (gView.screen == MtgScreen::Dashboard &&
+                startY >= 250 && startY <= 314 && startX >= 39 &&
+                startX < 276 && gView.pageCount > 1) {
+                const int dx = x - startX, dy = y - startY;
+                if (!draggingCounterPages && std::abs(dx) >= 10 &&
+                    std::abs(dx) > std::abs(dy)) {
+                    draggingCounterPages = true;
+                }
+                if (draggingCounterPages) {
+                    int offset = std::clamp(dx, -226, 226);
+                    if ((offset < 0 && gView.page >= gView.pageCount - 1) ||
+                        (offset > 0 && gView.page == 0))
+                        offset = 0;
+                    const int64_t now = esp_timer_get_time();
+                    if ((std::abs(offset - gView.dragOffsetPx) >= 2 &&
+                         now - lastDragDrawUs >= 24000) ||
+                        (!gView.dragActive && offset != 0)) {
+                        gView.dragActive = offset != 0;
+                        gView.dragOffsetPx = offset;
+                        lastDragDrawUs = now;
+                        publish();
+                    }
+                }
+            }
             // Long hold over LIFE starts a *confirmation*, never an instant reset.
             if (!holdTriggered && gView.screen == MtgScreen::Dashboard &&
                 startX >= 115 && startX <= 245 &&
@@ -795,7 +848,20 @@ void task(void *) {
         if (!currentlyDown && down && !holdTriggered) {
             const int dx = touchX - startX;
             const int dy = touchY - startY;
-            if (gView.screen == MtgScreen::EditCounters) {
+            if (draggingCounterPages) {
+                // A short drag springs back; a committed drag snaps to the
+                // neighbouring page from the finger's actual release offset.
+                const int offset = std::clamp(dx, -226, 226);
+                const int direction = offset < 0 ? 1 : -1;
+                const int candidate = gView.page + direction;
+                if (std::abs(offset) >= 68 && candidate >= 0 &&
+                    candidate < gView.pageCount)
+                    gView.page = candidate;
+                gView.dragActive = false;
+                gView.dragOffsetPx = 0;
+                draggingCounterPages = false;
+                publish();
+            } else if (gView.screen == MtgScreen::EditCounters) {
                 // Natural vertical scrolling: up reveals later entries.
                 // No horizontal pagination in this modal.
                 if (std::abs(dy) > 28 && std::abs(dy) > std::abs(dx))
