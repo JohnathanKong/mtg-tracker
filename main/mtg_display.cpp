@@ -400,73 +400,6 @@ FontExtents getFontExtents(const GFXfont &font, const char *text) {
     return ext;
 }
 
-void textInPanel(TextRect rect, const char *text,
-                 const GFXfont &preferred, uint16_t ink) {
-    const GFXfont *font = &preferred;
-    FontExtents e = getFontExtents(*font, text);
-    if (e.width() > rect.w || e.height() > rect.h) {
-        font = &FreeSans9pt7b;
-        e = getFontExtents(*font, text);
-    }
-    if (!e.visible) return;
-    if (e.width() > rect.w || e.height() > rect.h) {
-        // Small fallback, mainly for 4-digit poison/damage values.
-        printAt(rect.x + rect.w / 2,
-                rect.y + (rect.h - 7) / 2, text, 1, ink);
-        return;
-    }
-    int originX = rect.x + (rect.w - e.width()) / 2 - e.x0;
-    const int baseline = rect.y + (rect.h - e.height()) / 2 - e.y0;
-
-    // The screen is round. A value can fit a rectangular capsule yet still
-    // cross the physical circular edge, especially the top-right POISON row.
-    // Reposition the full rendered glyph bounds *before* drawing instead of
-    // relying on frame clipping (which chops off the digits).
-    constexpr int kTextSafeRadius = 168; // 12 px inside the 180 px edge
-    auto fitsRoundScreen = [&](int shift) {
-        const int l = originX + e.x0 + shift;
-        const int r = originX + e.x1 - 1 + shift;
-        const int t = baseline + e.y0;
-        const int b = baseline + e.y1 - 1;
-        if (l < rect.x || r >= rect.x + rect.w) return false;
-        const int xs[] = {l, r};
-        const int ys[] = {t, b};
-        for (int x : xs) for (int y : ys) {
-            const int dx = x - 180, dy = y - 180;
-            if (dx * dx + dy * dy > kTextSafeRadius * kTextSafeRadius)
-                return false;
-        }
-        return true;
-    };
-    if (!fitsRoundScreen(0)) {
-        const int inward = rect.x + rect.w / 2 >= 180 ? -1 : 1;
-        for (int px = 1; px <= rect.w / 2; ++px) {
-            if (fitsRoundScreen(inward * px)) {
-                originX += inward * px;
-                break;
-            }
-        }
-    }
-    int pen = originX;
-    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
-         *p; ++p) {
-        if (*p < font->first || *p > font->last) continue;
-        const GFXglyph &g = font->glyph[*p - font->first];
-        const uint8_t *data = font->bitmap + g.bitmapOffset;
-        int bit = 0;
-        for (int y = 0; y < g.height; ++y) {
-            for (int x = 0; x < g.width; ++x, ++bit) {
-                if (data[bit >> 3] & (0x80 >> (bit & 7))) {
-                    pixel(pen + g.xOffset + x,
-                          baseline + g.yOffset + y, ink);
-                }
-            }
-        }
-        pen += g.xAdvance;
-    }
-}
-
-
 // New artwork-first round HUD. The uploaded deck image is RGB565 pixel data,
 // not part of the chrome. All numbers, counter names and selection highlights
 // are rendered live, so none of the example dragon/numbers are baked in.
@@ -532,56 +465,29 @@ void drawPagination(int current, int total, int y) {
                   n == current ? kGold : color(85, 92, 103));
     }
 }
-uint16_t accentFor(uint8_t type) {
-    switch (type) {
-    case 0: return color(229, 170, 96); // Commander deaths
-    case 1: return color(222, 102, 80); // Damage
-    case 2: return color(82, 199, 180); // Experience / poison
-    case 3: return color(105, 170, 224); // Treasure / rad
-    default: return color(179, 136, 220);
-    }
-}
-// The antialiased text implementation is below the geometry helpers.
-void aaText(TextRect rect, const char *text, const GFXfont &font,
-            int desiredHeight, uint16_t ink);
-
-void drawTileLabel(int x, int y, int w, int h, const char *full, uint16_t ink) {
-    char text[36]{};
-    std::snprintf(text, sizeof(text), "%s", full);
-    for (char &c : text) c = char(std::toupper(static_cast<unsigned char>(c)));
-    const int count = int(std::strlen(text));
-    // Compact but legible two-line captions, no clipped enormous fallback.
-    int separator = -1;
-    if (count > 10) {
-        for (int i = 1; i < count; ++i)
-            if (text[i] == ' ' && i <= 13 && count - i - 1 <= 13) {
-                separator = i;
-                break;
+// Small, independent Add Counter control in the lower-right. Unlike the
+// opponent '+' in the damage strip, this opens the optional counter chooser.
+// Soft RGB565 blending keeps the ring round at 360px rather than pixel-stepped.
+void drawPlusNavigation(int cx, int cy) {
+    constexpr int outerRadius = 14;
+    constexpr int innerRadius = 12;
+    for (int yy = -outerRadius-1; yy <= outerRadius+1; ++yy) {
+        for (int xx = -outerRadius-1; xx <= outerRadius+1; ++xx) {
+            const int r2 = xx * xx + yy * yy;
+            if (r2 > (outerRadius+1) * (outerRadius+1)) continue;
+            if (r2 <= innerRadius * innerRadius) {
+                blendInk(cx + xx, cy + yy, 8, 23, 23, 195);
+            } else if (r2 <= outerRadius * outerRadius) {
+                blendInk(cx + xx, cy + yy, 239, 191, 105, 235);
+            } else {
+                blendInk(cx + xx, cy + yy, 239, 191, 105, 55);
             }
+        }
     }
-    if (separator >= 0) {
-        text[separator] = '\0';
-        aaText({x, y + 1, w, h / 2 - 1}, text, FreeSans18pt7b, 10, ink);
-        aaText({x, y + h / 2, w, h / 2 - 1}, text + separator + 1,
-               FreeSans18pt7b, 10, ink);
-    } else {
-        aaText({x, y + 1, w, h - 2}, text, FreeSans18pt7b, 11, ink);
-    }
-}
-void drawCounterTile(int x, int y, int w, int h, const MtgTile &tile) {
-    const uint16_t accent = tile.selected ? kTeal : accentFor(tile.accent);
-    // Decoration is from the pre-rendered curved transparent skin. No
-    // rectangular fills are applied over its antialiased gold contours.
-    if (tile.selected) {
-        fillRect(x + 19, y + h - 5, std::max(1, w - 39), 1, kTeal);
-    }
-    char value[20];
-    std::snprintf(value, sizeof(value), "%d", tile.value);
-    const int valueWidth = h < 35 ? 31 : 35;
-    drawTileLabel(x + 8, y + 1, w - valueWidth - 13, h - 2,
-                  tile.label, tile.selected ? accent : kIvory);
-    aaText({x + w - valueWidth - 5, y + 3, valueWidth, h - 6},
-           value, FreeSans18pt7b, 22, tile.selected ? kTeal : kIvory);
+    for (int dx = -6; dx <= 6; ++dx)
+        blendInk(cx + dx, cy, 255, 218, 152, 255);
+    for (int dy = -6; dy <= 6; ++dy)
+        blendInk(cx, cy + dy, 255, 218, 152, 255);
 }
 
 // Antialias by integrating sixteen subpixel samples from the larger bundled
