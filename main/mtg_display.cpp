@@ -841,7 +841,14 @@ void drawDashboard(const MtgGameView &view) {
                       view.choices[i].label, 0,
                       view.choices[i].checked ? kIvory : kMuted);
         }
-        drawPagination(view.addPage, view.addPageCount, 306);
+        // A vertical scrollbar replaces the old horizontal page dots.
+        // The four visible checkboxes move up/down as the user swipes.
+        softCapsule(309, 111, 4, 180, 2, 64, 67, 67);
+        const int allRows = std::max(4, view.addPageCount + 3);
+        const int thumbH = std::max(23, 180 * 4 / allRows);
+        const int thumbY = 111 + (view.addPageCount > 1 ?
+            view.addPage * (180 - thumbH) / (view.addPageCount - 1) : 0);
+        softCapsule(307, thumbY, 8, thumbH, 4, 229, 185, 107);
         atlasText({136, 318, 88, 17}, "DONE", 0, kGold);
         return;
     }
