@@ -44,6 +44,8 @@ SemaphoreHandle_t gTransferDone = nullptr;
 TaskHandle_t gDisplayTask = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gBackdrop = nullptr;  // cached art + ornate chrome (speeds up dial updates)
+uint16_t *gEditBase = nullptr;  // cached editor modal, excluding scrolling rows
+bool gEditBaseValid = false;
 char gBackdropDeck[96]{};
 uint32_t gBackdropRevision = 0;
 int gBackdropOpponents[3]{-1, -1, -1};
@@ -861,9 +863,16 @@ void drawDashboard(const MtgGameView &view) {
                  gBackdropSelectedDamage == view.selectedDamage;
     for (int i = 0; i < 3; ++i)
         if (gBackdropOpponents[i] != view.damageIndices[i]) reuse = false;
-    if (reuse) {
+    // The static modal shape/title do not need to be redrawn on each
+    // touch sample. Cached base + a small clipped row repaint is much cheaper.
+    const bool editReuse = reuse && gEditBaseValid && gEditBase &&
+                           view.screen == MtgScreen::EditCounters;
+    if (editReuse) {
+        std::memcpy(gFrame, gEditBase, 360u * 360u * 2u);
+    } else if (reuse) {
         std::memcpy(gFrame, gBackdrop, 360u * 360u * 2u);
     } else {
+        gEditBaseValid = false;
         drawHeroArt();
         applyOrnateSkin(view);
         drawNativeChrome(view);
@@ -911,8 +920,14 @@ void drawDashboard(const MtgGameView &view) {
     }
 
     if (view.screen == MtgScreen::EditCounters) {
-        chromePanel(36, 72, 288, 244, 19, kGold, kBg);
-        atlasText({73, 78, 213, 23}, "EDIT COUNTERS", 0, kGold);
+        if (!editReuse) {
+            chromePanel(36, 72, 288, 244, 19, kGold, kBg);
+            atlasText({73, 78, 213, 23}, "EDIT COUNTERS", 0, kGold);
+            if (gEditBase) {
+                std::memcpy(gEditBase,gFrame,360u * 360u * 2u);
+                gEditBaseValid=true;
+            }
+        }
         char count[24];
         std::snprintf(count, sizeof(count), "%d SELECTED", view.selectedTrackerCount);
         atlasText({91, 96, 178, 14}, count, 0, kMuted);
@@ -1283,6 +1298,8 @@ bool initDisplayHardware() {
     gFrame = static_cast<uint16_t *>(heap_caps_malloc(
         kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gBackdrop = static_cast<uint16_t *>(heap_caps_malloc(
+        kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    gEditBase = static_cast<uint16_t *>(heap_caps_malloc(
         kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gArt = static_cast<uint16_t *>(heap_caps_malloc(
         360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
