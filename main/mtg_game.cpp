@@ -84,6 +84,16 @@ std::vector<DeckMeta> gDecks;
 std::vector<ActiveCounter> gTrackers;
 std::vector<CounterDef> gAvailable;
 int gActiveTracker = -1;
+constexpr int kMaxOpponents = 12;
+int gOpponentCount = 3;
+int gOpponentPage = 0;
+int gOpponentSelected = -1;
+int gOpponentDamage[kMaxOpponents]{};
+struct SavedOpponentDamage {
+    uint32_t magic = 0x4D54444D; // MTDM
+    uint32_t count = 3;
+    int32_t values[kMaxOpponents]{};
+};
 MtgGameView gView;
 portMUX_TYPE gViewLock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t gRotaryEvents = nullptr;
@@ -142,12 +152,12 @@ void refreshAvailable() {
     }
 }
 void refreshCounterView() {
-    gView.pageCount = std::max(1, int((gTrackers.size() + 3) / 4));
+    gView.pageCount = std::max(1, int((gTrackers.size() + 1) / 2));
     gView.page = std::clamp(gView.page, 0, gView.pageCount - 1);
     gView.tileCount = 0;
     for (auto &tile : gView.tiles) tile = MtgTile{};
-    for (int pos = gView.page * 4;
-         pos < int(gTrackers.size()) && pos < (gView.page + 1) * 4; ++pos) {
+    for (int pos = gView.page * 2;
+         pos < int(gTrackers.size()) && pos < (gView.page + 1) * 2; ++pos) {
         const ActiveCounter &entry = gTrackers[size_t(pos)];
         MtgTile &tile = gView.tiles[gView.tileCount++];
         std::snprintf(tile.label, sizeof(tile.label), "%s", entry.label.c_str());
@@ -158,6 +168,17 @@ void refreshCounterView() {
         else if (entry.id == "experience" || entry.id == "poison") tile.accent = 2;
         else if (entry.id == "treasures" || entry.id == "rad") tile.accent = 3;
         else tile.accent = 4;
+    }
+    gView.damagePlayers = gOpponentCount;
+    gView.damagePageCount = std::max(1, (gOpponentCount + 2) / 3);
+    gOpponentPage = std::clamp(gOpponentPage, 0, gView.damagePageCount - 1);
+    gView.damagePage = gOpponentPage;
+    gView.selectedDamage = gView.selected == MtgCounter::CommanderDamage ?
+                           gOpponentSelected : -1;
+    for (int n = 0; n < 3; ++n) {
+        const int idx = gOpponentPage * 3 + n;
+        gView.damageIndices[n] = idx < gOpponentCount ? idx + 1 : 0;
+        gView.damageValues[n] = idx < gOpponentCount ? gOpponentDamage[idx] : 0;
     }
     refreshAvailable();
     gView.addPageCount = std::max(1, int((gAvailable.size() + 3) / 4));
@@ -202,6 +223,13 @@ void writeState() {
     key[0] = 't';
     if (err == ESP_OK)
         err = nvs_set_blob(handle, key, &extras, sizeof(extras));
+    SavedOpponentDamage opponents;
+    opponents.count = uint32_t(gOpponentCount);
+    for (int i = 0; i < kMaxOpponents; ++i)
+        opponents.values[i] = gOpponentDamage[i];
+    key[0] = 'p';
+    if (err == ESP_OK)
+        err = nvs_set_blob(handle, key, &opponents, sizeof(opponents));
     if (err == ESP_OK)
         err = nvs_set_str(handle, "active", gDecks[size_t(gActiveDeckIndex)].id.c_str());
     if (err == ESP_OK) err = nvs_commit(handle);
@@ -214,6 +242,8 @@ void loadState(const std::string &id) {
     Saved save;
     StoredCounters extras;
     bool hasExtras = false;
+    SavedOpponentDamage opponents;
+    bool hasOpponents = false;
     nvs_handle_t handle;
     if (nvs_open("mtg_game", NVS_READONLY, &handle) == ESP_OK) {
         char key[16]; nvsKey(key, id);
@@ -226,10 +256,20 @@ void loadState(const std::string &id) {
         hasExtras = nvs_get_blob(handle, key, &extras, &length) == ESP_OK &&
                     length == sizeof(extras) && extras.magic == 0x4D543244 &&
                     extras.count <= kMaxActiveCounters;
+        key[0] = 'p';
+        length = sizeof(opponents);
+        hasOpponents = nvs_get_blob(handle, key, &opponents, &length) == ESP_OK &&
+                       length == sizeof(opponents) && opponents.magic == 0x4D54444D &&
+                       opponents.count >= 1 && opponents.count <= kMaxOpponents;
         nvs_close(handle);
     }
     gView.life = save.life; gView.poison = save.poison; gView.rad = save.rad;
     gView.damage = save.damage; gView.casts = save.casts; gView.deaths = save.deaths;
+    gOpponentCount = hasOpponents ? int(opponents.count) : 3;
+    for (int i = 0; i < kMaxOpponents; ++i)
+        gOpponentDamage[i] = hasOpponents ? opponents.values[i] : 0;
+    gOpponentPage = 0;
+    gOpponentSelected = -1;
     rebuildDefaults();
     if (hasExtras) {
         for (size_t i = 0; i < extras.count; ++i) {
@@ -456,7 +496,10 @@ bool touchPoint(int &x, int &y) {
 
 void changeCounter(int direction) {
     int *number = nullptr;
-    if (gView.selected == MtgCounter::Life) number = &gView.life;
+    if (gView.selected == MtgCounter::CommanderDamage &&
+        gOpponentSelected >= 0 && gOpponentSelected < gOpponentCount)
+        number = &gOpponentDamage[gOpponentSelected];
+    else if (gView.selected == MtgCounter::Life) number = &gView.life;
     else if (gView.selected == MtgCounter::Casts) number = &gView.casts;
     else if (gView.selected == MtgCounter::Dynamic &&
              gActiveTracker >= 0 && gActiveTracker < int(gTrackers.size()))
