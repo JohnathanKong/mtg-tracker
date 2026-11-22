@@ -45,10 +45,16 @@ struct MtgGameView {
     int damageValues[3]{};
     int damageIndices[3]{};
     int selectedDamage = -1;
-    int addPage = 0, addPageCount = 1;
+    // Edit Counters is a pixel-scrolled list, not paginated rows.
+    // Scroll position is updated continuously during touch and inertia.
+    int editScrollPx = 0;
+    int editMaxScrollPx = 0;
+    int editTotalRows = 0;
+    int editFirstRow = 0;
+    int editRowOffsetPx = 0;
     int selectedTrackerCount = 0;
     int choiceCount = 0;
-    MtgMenuChoice choices[4]{};
+    MtgMenuChoice choices[5]{};
 };
 
 void mtg_game_start();
