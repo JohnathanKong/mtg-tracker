@@ -27,6 +27,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_sh8601.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -45,7 +46,6 @@ uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gBackdrop = nullptr;  // cached art + ornate chrome (speeds up dial updates)
 char gBackdropDeck[96]{};
 uint32_t gBackdropRevision = 0;
-int gBackdropTiles = -1;
 int gBackdropOpponents[3]{-1, -1, -1};
 bool gBackdropValid = false;
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
@@ -774,8 +774,7 @@ void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     bool reuse = gBackdrop && gBackdropValid &&
                  std::strcmp(gBackdropDeck, view.deckId) == 0 &&
-                 gBackdropRevision == view.artworkRevision &&
-                 gBackdropTiles == view.tileCount;
+                 gBackdropRevision == view.artworkRevision;
     for (int i = 0; i < 3; ++i)
         if (gBackdropOpponents[i] != view.damageIndices[i]) reuse = false;
     if (reuse) {
@@ -787,7 +786,6 @@ void drawDashboard(const MtgGameView &view) {
             std::memcpy(gBackdrop, gFrame, 360u * 360u * 2u);
             std::snprintf(gBackdropDeck, sizeof(gBackdropDeck), "%s", view.deckId);
             gBackdropRevision = view.artworkRevision;
-            gBackdropTiles = view.tileCount;
             for (int i = 0; i < 3; ++i)
                 gBackdropOpponents[i] = view.damageIndices[i];
             gBackdropValid = true;
@@ -1005,9 +1003,14 @@ bool initBacklight() {
     return check(ledc_channel_config(&channel), "Backlight PWM channel");
 }
 
-bool present() {
-    for (int y = 0; y < kHeight; y += kRowsPerTransfer) {
-        const int rows = std::min(kRowsPerTransfer, kHeight - y);
+// On a dial tick, only one narrow horizontal band usually changes.
+// Sending the full 360x360 framebuffer for each click caused perceptible
+// latency. Keep the proven full-width SH8601 transfer format and crop rows.
+bool presentRows(int startRow, int endRow) {
+    startRow = std::clamp(startRow, 0, kHeight);
+    endRow = std::clamp(endRow, startRow, kHeight);
+    for (int y = startRow; y < endRow; y += kRowsPerTransfer) {
+        const int rows = std::min(kRowsPerTransfer, endRow - y);
         std::memcpy(gDmaStrip, gFrame + y * kWidth, size_t(rows * kWidth) * 2);
         if (!check(esp_lcd_panel_draw_bitmap(gPanel, 0, y, kWidth, y + rows,
                                              gDmaStrip), "LCD draw"))
@@ -1017,6 +1020,72 @@ bool present() {
             return false;
         }
     }
+    return true;
+}
+struct DirtyRows {
+    struct Range { int start, end; };
+    Range ranges[6]{};
+    int count = 0;
+    void add(int start, int end) {
+        if (count < 6) ranges[count++] = {start,end};
+    }
+    static DirtyRows full() { DirtyRows d; d.add(0,kHeight); return d; }
+};
+DirtyRows calculateDamage(const PendingStatus &before,
+                          const PendingStatus &after,
+                          bool hadFrame) {
+    if (!hadFrame || !before.gameMode || !after.gameMode)
+        return DirtyRows::full();
+    const MtgGameView &a = before.game, &b = after.game;
+    if (a.screen != b.screen || a.deckCount != b.deckCount ||
+        a.artworkRevision != b.artworkRevision ||
+        std::strcmp(a.deckId, b.deckId) != 0)
+        return DirtyRows::full();
+
+    DirtyRows dirty;
+    if (b.screen == MtgScreen::EditCounters) {
+        if (a.addPage != b.addPage || a.choiceCount != b.choiceCount) {
+            dirty.add(75, 336);
+            return dirty;
+        }
+        if (a.selectedTrackerCount != b.selectedTrackerCount)
+            dirty.add(94, 112);
+        for (int i = 0; i < b.choiceCount && i < 4; ++i)
+            if (a.choices[i].checked != b.choices[i].checked ||
+                std::strcmp(a.choices[i].label,b.choices[i].label) != 0)
+                dirty.add(108+i*46,155+i*46);
+        return dirty;
+    }
+    if (b.screen != MtgScreen::Dashboard)
+        return DirtyRows::full();
+
+    if (a.life != b.life ||
+        (a.selected == MtgCounter::Life) != (b.selected == MtgCounter::Life))
+        dirty.add(100, 165);
+    if (a.casts != b.casts ||
+        (a.selected == MtgCounter::Casts) != (b.selected == MtgCounter::Casts))
+        dirty.add(155, 195);
+    bool damageChanged = a.damagePage != b.damagePage ||
+                         a.damagePlayers != b.damagePlayers ||
+                         a.selectedDamage != b.selectedDamage;
+    for (int i = 0; i < 3; ++i)
+        damageChanged |= a.damageIndices[i] != b.damageIndices[i] ||
+                         a.damageValues[i] != b.damageValues[i];
+    if (damageChanged) dirty.add(197, 250);
+    bool tilesChanged = a.page != b.page || a.pageCount != b.pageCount ||
+                        a.tileCount != b.tileCount;
+    for (int i = 0; i < 4; ++i)
+        tilesChanged |= a.tiles[i].value != b.tiles[i].value ||
+                        a.tiles[i].selected != b.tiles[i].selected ||
+                        a.tiles[i].accent != b.tiles[i].accent ||
+                        std::strcmp(a.tiles[i].label,b.tiles[i].label) != 0;
+    if (tilesChanged) dirty.add(247, 320);
+    return dirty;
+}
+bool presentDirty(const DirtyRows &dirty) {
+    for (int i = 0; i < dirty.count; ++i)
+        if (!presentRows(dirty.ranges[i].start, dirty.ranges[i].end))
+            return false;
     return true;
 }
 
@@ -1111,27 +1180,78 @@ void displayTask(void *) {
     }
 
     uint32_t drawnGeneration = 0;
+    PendingStatus previous{};
+    bool hadFrame = false;
     while (true) {
         PendingStatus snapshot;
         taskENTER_CRITICAL(&gStatusLock);
         snapshot = gPending;
         taskEXIT_CRITICAL(&gStatusLock);
 
-        if (snapshot.generation != drawnGeneration) {
+        const bool changed = !hadFrame || snapshot.generation != drawnGeneration;
+        if (changed) {
+            const DirtyRows dirty = calculateDamage(previous, snapshot, hadFrame);
+            if (hadFrame && previous.gameMode && snapshot.gameMode &&
+                previous.game.screen == MtgScreen::Dashboard &&
+                snapshot.game.screen == MtgScreen::Dashboard &&
+                std::strcmp(previous.game.deckId,snapshot.game.deckId) == 0) {
+                const MtgGameView &old = previous.game;
+                const MtgGameView &now = snapshot.game;
+                if (old.page != now.page && now.tileCount > 0) {
+                    gBottomAnimation = BottomAnimation::Slide;
+                    gSlideDirection = now.page > old.page ? 1 : -1;
+                    gAnimatedTile = -1;
+                    gAnimationStartedUs = esp_timer_get_time();
+                } else {
+                    int pulse = -1;
+                    for (int i = 0; i < 2; ++i)
+                        if (now.tileCount > i && old.tileCount > i &&
+                            (now.tiles[i].value != old.tiles[i].value ||
+                             now.tiles[i].selected != old.tiles[i].selected)) {
+                            pulse = i;
+                            break;
+                        }
+                    if (pulse >= 0) {
+                        gBottomAnimation = BottomAnimation::Pulse;
+                        gAnimatedTile = pulse;
+                        gAnimationStartedUs = esp_timer_get_time();
+                    }
+                }
+            } else {
+                gBottomAnimation = BottomAnimation::None;
+            }
+            gAnimationProgress = gBottomAnimation == BottomAnimation::None ? 1.0f : 0.0f;
             if (snapshot.gameMode)
                 drawDashboard(snapshot.game);
             else
-                drawState(snapshot.state, snapshot.decks, snapshot.percent,
+                drawState(snapshot.state,snapshot.decks,snapshot.percent,
                           snapshot.detail);
-            if (!present()) {
+            if (!presentDirty(dirty)) {
                 ESP_LOGE(kTag, "LCD transfer failed; USB sync remains active");
                 break;
             }
             drawnGeneration = snapshot.generation;
+            previous = snapshot;
+            hadFrame = true;
+        } else if (gBottomAnimation != BottomAnimation::None) {
+            // Only animate the optional row for ~140ms. No blocking sleeps
+            // and no redraws when the animation is complete.
+            constexpr int64_t kAnimationDurationUs = 140000;
+            const int64_t elapsed = esp_timer_get_time() - gAnimationStartedUs;
+            gAnimationProgress = std::clamp(
+                float(elapsed) / float(kAnimationDurationUs),0.0f,1.0f);
+            drawDashboard(snapshot.game);
+            if (!presentRows(247,320)) {
+                ESP_LOGE(kTag,"LCD bottom animation transfer failed");
+                break;
+            }
+            if (elapsed >= kAnimationDurationUs)
+                gBottomAnimation = BottomAnimation::None;
         }
-        // Wake immediately for a changed counter instead of polling every 40 ms.
-        // Updates received during a full-frame DMA transfer remain pending.
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // Only wake periodically during the brief bottom-row animation.
+        // Idle screen stays asleep; fresh input wakes immediately.
+        ulTaskNotifyTake(pdTRUE, gBottomAnimation == BottomAnimation::None ?
+                         portMAX_DELAY : pdMS_TO_TICKS(30));
     }
     gDisplayTask = nullptr;
     vTaskDelete(nullptr);
