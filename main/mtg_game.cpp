@@ -1,7 +1,7 @@
 // Off-line Commander game session + deck selector for the Waveshare S3 knob.
 // Clockwise GPIO8 and counterclockwise GPIO7 are *direction pulses*, not
 // quadrature. This board's measured pinout is in the README references.
-// Touch CST816D uses I2C (SDA11/SCL12, 0x15) and is rotated 180 degrees.
+// Touch CST816D uses I2C (SDA11/SCL12, 0x15). Coordinates match the LCD.
 //
 // Session counters are persisted per deck in NVS (not wiped by deck sync).
 // Each input callback updates state; display rendering happens on another task.
@@ -54,7 +54,7 @@ struct StoredCounter {
     uint8_t padding[3]{};
 };
 struct StoredCounters {
-    uint32_t magic = 0x4D543243;
+    uint32_t magic = 0x4D543244; // MT2D: discard counters accidentally added by prior incorrect touch mapping
     uint32_t count = 0;
     StoredCounter items[kMaxActiveCounters]{};
 };
@@ -224,7 +224,7 @@ void loadState(const std::string &id) {
         key[0] = 't';
         length = sizeof(extras);
         hasExtras = nvs_get_blob(handle, key, &extras, &length) == ESP_OK &&
-                    length == sizeof(extras) && extras.magic == 0x4D543243 &&
+                    length == sizeof(extras) && extras.magic == 0x4D543244 &&
                     extras.count <= kMaxActiveCounters;
         nvs_close(handle);
     }
@@ -447,9 +447,10 @@ bool touchPoint(int &x, int &y) {
     if ((result[1] & 0x0F) == 0) return false;
     const int rawX = ((result[2] & 0x0F) << 8) | result[3];
     const int rawY = ((result[4] & 0x0F) << 8) | result[5];
-    // The LCD panel is physically mounted upside down relative to CST816D.
-    x = 359 - rawX;
-    y = 359 - rawY;
+    // Keep native touch coordinates. The previous 180-degree inversion
+    // mapped the bottom-right Add Counter control into the top deck picker.
+    x = rawX;
+    y = rawY;
     return x >= 0 && x < 360 && y >= 0 && y < 360;
 }
 
@@ -520,7 +521,7 @@ void tap(int x, int y) {
         return;
     }
     if (gView.screen == MtgScreen::AddCounter) {
-        if (y < 90 || y > 317) {
+        if (y < 90 || y >= 318) {
             gView.screen = MtgScreen::Dashboard;
             publish();
             return;
@@ -546,7 +547,7 @@ void tap(int x, int y) {
 
     if (y < 113) {
         gView.screen = MtgScreen::ChooseDeck;
-    } else if (y >= 300 && x >= 244 && x <= 288) {
+    } else if (y >= 301 && y <= 344 && x >= 242 && x <= 288) {
         gView.screen = MtgScreen::AddCounter;
         gView.addPage = 0;
     } else if (y >= 112 && y < 183) {
@@ -555,7 +556,7 @@ void tap(int x, int y) {
     } else if (y >= 183 && y < 221) {
         gView.selected = MtgCounter::Casts; // TAX is derived.
         gActiveTracker = -1;
-    } else if (y >= 224 && y < 302) {
+    } else if (y >= 224 && y < 303) {
         const int col = x >= 180 ? 1 : 0;
         const int row = y < 263 ? 0 : 1;
         const int tile = row * 2 + col;
