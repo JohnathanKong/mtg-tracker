@@ -740,6 +740,7 @@ bool initDisplayHardware() {
 void displayTask(void *) {
     if (!initDisplayHardware()) {
         ESP_LOGE(kTag, "LCD initialization failed; USB receiver remains active");
+        gDisplayTask = nullptr;
         vTaskDelete(nullptr);
         return;
     }
