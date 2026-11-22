@@ -401,6 +401,134 @@ void textInPanel(TextRect rect, const char *text,
     }
 }
 
+
+// New artwork-first round HUD. The uploaded deck image is RGB565 pixel data,
+// not part of the chrome. All numbers, counter names and selection highlights
+// are rendered live, so none of the example dragon/numbers are baked in.
+void fillRound(int x, int y, int w, int h, int radius, uint16_t ink) {
+    if (w <= 0 || h <= 0) return;
+    radius = std::clamp(radius, 1, std::min(w, h) / 2);
+    for (int py = 0; py < h; ++py) {
+        for (int px = 0; px < w; ++px) {
+            const int ox = px - std::clamp(px, radius, w - radius - 1);
+            const int oy = py - std::clamp(py, radius, h - radius - 1);
+            if (ox * ox + oy * oy <= radius * radius)
+                pixel(x + px, y + py, ink);
+        }
+    }
+}
+void chromePanel(int x, int y, int w, int h, int radius,
+                 uint16_t border, uint16_t surface) {
+    fillRound(x, y, w, h, radius, border);
+    fillRound(x + 1, y + 1, w - 2, h - 2, radius - 1, surface);
+    if (w > 12) fillRect(x + radius, y + 2, w - 2 * radius, 1, kGoldDim);
+}
+void drawHeroArt() {
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            const int dx = x - 180, dy = y - 180;
+            const int d2 = dx * dx + dy * dy;
+            if (d2 > 179 * 179) { pixel(x, y, kBg); continue; }
+            if (d2 > 175 * 175) { pixel(x, y, kGold); continue; }
+            if (d2 > 172 * 172) { pixel(x, y, kGoldDim); continue; }
+
+            int red = 7, green = y < 220 ? 20 : 13, blue = y < 220 ? 26 : 18;
+            if (gHasArt && y < 213) {
+                const uint16_t swapped = gArt[y * 360 + x];
+                const uint16_t rgb = uint16_t((swapped >> 8) | (swapped << 8));
+                const int ar = ((rgb >> 11) & 31) * 255 / 31;
+                const int ag = ((rgb >> 5) & 63) * 255 / 63;
+                const int ab = (rgb & 31) * 255 / 31;
+                int opacity = y < 138 ? 255 : std::max(0, (212 - y) * 255 / 74);
+                if (d2 > 164 * 164) opacity = opacity * 65 / 100;
+                red = (ar * opacity + red * (255 - opacity)) / 255;
+                green = (ag * opacity + green * (255 - opacity)) / 255;
+                blue = (ab * opacity + blue * (255 - opacity)) / 255;
+            }
+            pixel(x, y, color(unsigned(red), unsigned(green), unsigned(blue)));
+        }
+    }
+    // A thin second inner ring, kept off the pixels needed by the tiles.
+    for (int y = 6; y < 354; ++y)
+        for (int x = 6; x < 354; ++x) {
+            const int dx = x - 180, dy = y - 180;
+            const int r2 = dx * dx + dy * dy;
+            if (r2 >= 171 * 171 && r2 < 172 * 172)
+                pixel(x, y, kGoldDim);
+        }
+}
+void drawPagination(int current, int total, int y) {
+    if (total <= 1) return;
+    const int visible = std::min(total, 7);
+    const int start = 180 - (visible - 1) * 10 / 2;
+    for (int n = 0; n < visible; ++n) {
+        const int cx = start + n * 10;
+        fillRound(cx - 3, y, 6, 6, 3,
+                  n == current ? kGold : color(85, 92, 103));
+    }
+}
+void drawPlusNavigation(int cx, int cy) {
+    fillRound(cx - 13, cy - 13, 26, 26, 13, kGold);
+    fillRound(cx - 11, cy - 11, 22, 22, 11, kBg);
+    fillRect(cx - 6, cy - 1, 13, 2, kGold);
+    fillRect(cx - 1, cy - 6, 2, 13, kGold);
+}
+uint16_t accentFor(uint8_t type) {
+    switch (type) {
+    case 0: return color(229, 170, 96); // Commander deaths
+    case 1: return color(222, 102, 80); // Damage
+    case 2: return color(82, 199, 180); // Experience / poison
+    case 3: return color(105, 170, 224); // Treasure / rad
+    default: return color(179, 136, 220);
+    }
+}
+void drawTinyMark(int centerX, int centerY, uint16_t accent) {
+    // Diamond glyph without fragile Unicode font assumptions.
+    for (int dy = -5; dy <= 5; ++dy) {
+        const int span = 5 - std::abs(dy);
+        pixel(centerX - span, centerY + dy, accent);
+        pixel(centerX + span, centerY + dy, accent);
+    }
+}
+void drawTileLabel(int x, int y, int w, const char *full, uint16_t ink) {
+    // The 5x7 pixel font is deliberate: long "COMMANDER DAMAGE" labels can
+    // use two rows inside the 34px capsule without overlapping the value.
+    char text[36]{};
+    std::snprintf(text, sizeof(text), "%s", full);
+    for (char &c : text) c = char(std::toupper(static_cast<unsigned char>(c)));
+    const int len = int(std::strlen(text));
+    const int maxLetters = std::max(3, std::min(15, w / 6));
+    if (len <= maxLetters) {
+        printAt(x + w / 2, y + 10, text, 1, ink);
+        return;
+    }
+    int split = -1;
+    for (int i = 1; i < len; ++i)
+        if (text[i] == ' ' && i <= maxLetters &&
+            len - i - 1 <= maxLetters) { split = i; break; }
+    if (split < 0) {
+        char cut[20]{};
+        std::snprintf(cut, sizeof(cut), "%.*s", maxLetters, text);
+        printAt(x + w / 2, y + 10, cut, 1, ink);
+        return;
+    }
+    text[split] = '\0';
+    printAt(x + w / 2, y + 6, text, 1, ink);
+    printAt(x + w / 2, y + 17, text + split + 1, 1, ink);
+}
+void drawCounterTile(int x, int y, int w, int h, const MtgTile &tile) {
+    const uint16_t accent = tile.selected ? color(113, 235, 239) : accentFor(tile.accent);
+    chromePanel(x, y, w, h, 9, accent, color(17, 20, 27));
+    fillRect(x + 2, y + 5, 3, h - 10, accent);
+    drawTinyMark(x + 16, y + h / 2, accent);
+    char value[20];
+    std::snprintf(value, sizeof(value), "%d", tile.value);
+    const int valueWidth = h < 35 ? 28 : 31;
+    drawTileLabel(x + 26, y, w - 29 - valueWidth, tile.label, kIvory);
+    textInPanel({x + w - valueWidth - 4, y + 3, valueWidth, h - 6},
+                value, FreeSans18pt7b, tile.selected ? kTeal : kIvory);
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     drawGameSkin();
