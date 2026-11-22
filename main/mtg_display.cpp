@@ -522,6 +522,65 @@ void drawCounterTile(int x, int y, int w, int h, const MtgTile &tile) {
                 value, FreeSans18pt7b, tile.selected ? kTeal : kIvory);
 }
 
+
+// Antialias by integrating sixteen subpixel samples from the larger bundled
+// GFX glyphs. Labels are downsampled from 18pt shapes rather than rendering
+// jagged 5x7 uppercase blocks or stretching small text.
+void aaText(TextRect rect, const char *text, const GFXfont &font,
+            int desiredHeight, uint16_t ink) {
+    const FontExtents ext = getFontExtents(font, text);
+    if (!ext.visible || rect.w <= 0 || rect.h <= 0) return;
+    const float scale = std::min({1.0f, float(desiredHeight) / float(ext.height()),
+                                   float(rect.h) / float(ext.height()),
+                                   float(rect.w) / float(ext.width())});
+    if (scale <= 0.0f) return;
+    const int outW = std::max(1, int(ext.width() * scale + 0.5f));
+    const int outH = std::max(1, int(ext.height() * scale + 0.5f));
+    const int offsetX = rect.x + (rect.w - outW) / 2;
+    const int offsetY = rect.y + (rect.h - outH) / 2;
+    const uint16_t actual = uint16_t((ink >> 8) | (ink << 8));
+    const uint8_t red = uint8_t(((actual >> 11) & 31) * 255 / 31);
+    const uint8_t green = uint8_t(((actual >> 5) & 63) * 255 / 63);
+    const uint8_t blue = uint8_t((actual & 31) * 255 / 31);
+    int pen = 0;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
+         *p; ++p) {
+        if (*p < font.first || *p > font.last) continue;
+        const GFXglyph &glyph = font.glyph[*p - font.first];
+        const uint8_t *bits = font.bitmap + glyph.bitmapOffset;
+        const float posX = (pen + glyph.xOffset - ext.x0) * scale;
+        const float posY = (glyph.yOffset - ext.y0) * scale;
+        const int left = std::max(0, int(posX));
+        const int top = std::max(0, int(posY));
+        const int right = std::min(outW, int(posX + glyph.width * scale + 1.0f));
+        const int bottom = std::min(outH, int(posY + glyph.height * scale + 1.0f));
+        for (int dy = top; dy < bottom; ++dy) {
+            for (int dx = left; dx < right; ++dx) {
+                int coverage = 0;
+                for (int sy = 0; sy < 4; ++sy) {
+                    const int sourceY = int((dy + (sy + 0.5f) * 0.25f - posY) / scale);
+                    if (sourceY < 0 || sourceY >= glyph.height) continue;
+                    for (int sx = 0; sx < 4; ++sx) {
+                        const int sourceX = int((dx + (sx + 0.5f) * 0.25f - posX) / scale);
+                        if (sourceX < 0 || sourceX >= glyph.width) continue;
+                        const int bit = sourceY * glyph.width + sourceX;
+                        if ((bits[bit >> 3] & (0x80u >> (bit & 7))) != 0)
+                            ++coverage;
+                    }
+                }
+                if (coverage) {
+                    const int screenX = offsetX + dx, screenY = offsetY + dy;
+                    if (screenX >= rect.x && screenX < rect.x + rect.w &&
+                        screenY >= rect.y && screenY < rect.y + rect.h)
+                        blendInk(screenX, screenY, red, green, blue,
+                                 coverage * 255 / 16);
+                }
+            }
+        }
+        pen += glyph.xAdvance;
+    }
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     drawHeroArt();
