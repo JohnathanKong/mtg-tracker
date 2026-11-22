@@ -647,24 +647,51 @@ void tap(int x, int y) {
         return;
     }
     if (gView.screen == MtgScreen::EditCounters) {
-        if (y < 90 || y >= 318) {
+        // Checkboxes change visibility, not the numeric value of a counter.
+        // DONE exits; swiping switches between four-option pages.
+        if (y < 90 || y >= 317) {
             gView.screen = MtgScreen::Dashboard;
             publish();
             return;
         }
-        if (y >= 104 && y < 296) {
+        if (y >= 104 && y < 296 && x >= 55 && x <= 305) {
             const int row = (y - 104) / 48;
             const int index = gView.addPage * 4 + row;
-            if (row >= 0 && row < 4 && index < int(gAvailable.size()) &&
-                gTrackers.size() < kMaxActiveCounters) {
-                const CounterDef &item = gAvailable[size_t(index)];
-                gTrackers.push_back({item.id, item.label, 0, true});
-                gActiveTracker = int(gTrackers.size()) - 1;
-                gView.page = gActiveTracker / 4;
-                gView.selected = MtgCounter::Dynamic;
+            if (row >= 0 && row < 4 && index < int(gAvailable.size())) {
+                const CounterDef item = gAvailable[size_t(index)];
+                int active = -1;
+                for (size_t n = 0; n < gTrackers.size(); ++n)
+                    if (gTrackers[n].id == item.id) {
+                        active = int(n);
+                        break;
+                    }
+                if (active >= 0) {
+                    // Save the value so unchecking never silently zeroes it.
+                    gHiddenTrackers.push_back(gTrackers[size_t(active)]);
+                    gTrackers.erase(gTrackers.begin() + active);
+                    if (gActiveTracker == active) {
+                        gActiveTracker = -1;
+                        gView.selected = MtgCounter::Life;
+                    } else if (gActiveTracker > active) {
+                        --gActiveTracker;
+                    }
+                } else if (gTrackers.size() < kMaxActiveCounters) {
+                    ActiveCounter entry{item.id, item.label, legacyValue(item.id), true};
+                    for (auto it = gHiddenTrackers.begin(); it != gHiddenTrackers.end(); ++it) {
+                        if (it->id == item.id) {
+                            entry = *it;
+                            gHiddenTrackers.erase(it);
+                            break;
+                        }
+                    }
+                    gTrackers.push_back(std::move(entry));
+                } else {
+                    return; // Selection capacity reached.
+                }
+                gView.page = std::clamp(gView.page, 0,
+                                        std::max(0, int((gTrackers.size() + 1) / 2) - 1));
                 gDirty = true;
                 gLastChange = esp_timer_get_time();
-                gView.screen = MtgScreen::Dashboard;
                 publish();
             }
         }
@@ -695,21 +722,22 @@ void tap(int x, int y) {
         gView.selected = MtgCounter::Casts;
         gActiveTracker = -1;
         gOpponentSelected = -1;
-    } else if (y >= 257 && y <= 287) {
-        const int tile = x < 180 ? 0 : 1;
-        const int index = gView.page * 2 + tile;
-        if (index < int(gTrackers.size()) && x > 43 && x < 315) {
-            gActiveTracker = index;
-            gOpponentSelected = -1;
-            gView.selected = MtgCounter::Dynamic;
-        } else if (gTrackers.size() < kMaxActiveCounters) {
-            gView.screen = MtgScreen::EditCounters;
-            gView.addPage = 0;
-        }
-    } else if (y >= 293 && y <= 334 && x >= 260 && x <= 322) {
-        // Discreet Add Counter affordance, distinct from opponent +/- buttons.
+    } else if (y >= 256 && y <= 289 && x >= 279 && x <= 321) {
+        // The only way to edit the set of optional counters.
         gView.screen = MtgScreen::EditCounters;
         gView.addPage = 0;
+    } else if (y >= 259 && y <= 288) {
+        int tile = -1;
+        if (x >= 48 && x <= 156) tile = 0;
+        else if (x >= 165 && x <= 273) tile = 1;
+        if (tile >= 0) {
+            const int index = gView.page * 2 + tile;
+            if (index < int(gTrackers.size())) {
+                gActiveTracker = index;
+                gOpponentSelected = -1;
+                gView.selected = MtgCounter::Dynamic;
+            }
+        }
     }
     publish();
 }
