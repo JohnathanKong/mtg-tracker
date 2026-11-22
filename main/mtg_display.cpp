@@ -637,38 +637,34 @@ void drawDashboard(const MtgGameView &view) {
     }
 
     if (!gHasArt)
-        textInPanel({91, 61, 178, 30}, "SYNC ART", FreeSans18pt7b, kMuted);
+        aaText({82, 67, 196, 25}, "SYNC ART", FreeSans18pt7b, 17, kMuted);
 
-    // The permanent numbers never change location when swiping the tile pages.
-    // Casts is editable, Tax is derived as +2 mana per previous cast.
-    chromePanel(28, 184, 304, 39, 15, kGoldDim, color(9, 26, 25));
-    fillRect(179, 198, 1, 17, kGoldDim);
-    textInPanel({49, 193, 70, 19}, "CASTS", FreeSans9pt7b, kIvory);
+    // The skin supplies the curved, beveled crest and sash without baking
+    // in the preview dragon, static digits, or extra tracker decorations.
     char number[24];
-    std::snprintf(number, sizeof(number), "%d", view.casts);
-    textInPanel({124, 189, 53, 28}, number, FreeSans18pt7b,
-                view.selected == MtgCounter::Casts ? kTeal : kIvory);
-    textInPanel({201, 193, 55, 19}, "TAX", FreeSans9pt7b, kIvory);
-    std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    textInPanel({264, 189, 56, 28}, number, FreeSans18pt7b, kGold);
 
-    // Life crest sits over the lower part of the artwork as in the reference.
-    chromePanel(110, 111, 140, 84, 21,
-                view.selected == MtgCounter::Life ? kTeal : kGold, color(8, 23, 25));
-    textInPanel({130, 117, 100, 19}, "LIFE", FreeSans9pt7b, kGold);
+    aaText({141, 115, 78, 17}, "LIFE", FreeSans18pt7b, 14, kGold);
     std::snprintf(number, sizeof(number), "%d", view.life);
-    textInPanel({116, 137, 128, 50}, number, FreeSerif24pt7b,
-                view.selected == MtgCounter::Life ? kTeal : kIvory);
+    aaText({111, 139, 138, 47}, number, FreeSerif24pt7b, 44,
+           view.selected == MtgCounter::Life ? kTeal : kIvory);
 
-    // Exactly four optional counters per page. Their order is defined by
-    // saved desktop preferences and game-only additions.
-    if (view.tileCount > 0) drawCounterTile(31, 230, 146, 33, view.tiles[0]);
-    if (view.tileCount > 1) drawCounterTile(183, 230, 146, 33, view.tiles[1]);
-    if (view.tileCount > 2) drawCounterTile(56, 269, 121, 31, view.tiles[2]);
-    if (view.tileCount > 3) drawCounterTile(183, 269, 121, 31, view.tiles[3]);
+    aaText({53, 192, 68, 18}, "CASTS", FreeSans18pt7b, 13, kIvory);
+    std::snprintf(number, sizeof(number), "%d", view.casts);
+    aaText({128, 187, 49, 29}, number, FreeSans18pt7b, 23,
+           view.selected == MtgCounter::Casts ? kTeal : kIvory);
 
-    drawPagination(view.page, view.pageCount, 320);
-    drawPlusNavigation(266, 315);
+    aaText({215, 192, 45, 18}, "TAX", FreeSans18pt7b, 13, kIvory);
+    std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
+    aaText({266, 187, 49, 29}, number, FreeSans18pt7b, 22, kGold);
+
+    // Four optional tiles per page, with the empty slots truly invisible.
+    if (view.tileCount > 0) drawCounterTile(31, 228, 146, 35, view.tiles[0]);
+    if (view.tileCount > 1) drawCounterTile(183, 228, 146, 35, view.tiles[1]);
+    if (view.tileCount > 2) drawCounterTile(55, 269, 123, 33, view.tiles[2]);
+    if (view.tileCount > 3) drawCounterTile(182, 269, 123, 33, view.tiles[3]);
+    drawPagination(view.page, view.pageCount, 322);
+    // The gold Add Counter ring is already present in the decorative skin
+    // at (264, 321); do not draw a blocky duplicate over it.
 }
 void drawShell() {
     std::fill(gFrame, gFrame + kWidth * kHeight, kBg);
