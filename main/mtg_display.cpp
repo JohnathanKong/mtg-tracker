@@ -281,7 +281,21 @@ void applyOrnateSkin(const MtgGameView &view) {
             const uint8_t alpha = gSkin[off * 2u + 1u];
             if (!alpha) continue;
             const uint8_t *rgb = skin_start + size_t(index) * 3u;
-            blendInk(x, y, rgb[0], rgb[1], rgb[2], alpha);
+            // At native 360px, the original mockup's delicate gold strokes
+            // sometimes fade below a single RGB565 intensity step. Enhance
+            // gold contrast slightly without thresholding away edge alpha.
+            const bool gilded = rgb[0] > 115 && rgb[1] > 72 &&
+                                 int(rgb[0]) * 10 > int(rgb[1]) * 11 &&
+                                 rgb[2] < rgb[0];
+            if (gilded) {
+                const int opacity = std::min(255, int(alpha) * 115 / 100);
+                blendInk(x, y, uint8_t(std::min(255, int(rgb[0]) * 108 / 100)),
+                         uint8_t(std::min(255, int(rgb[1]) * 111 / 100)),
+                         uint8_t(std::min(255, int(rgb[2]) * 105 / 100)),
+                         opacity);
+            } else {
+                blendInk(x, y, rgb[0], rgb[1], rgb[2], alpha);
+            }
         }
     }
 }
