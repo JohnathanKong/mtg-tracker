@@ -916,8 +916,15 @@ void drawDashboard(const MtgGameView &view) {
         char count[24];
         std::snprintf(count, sizeof(count), "%d SELECTED", view.selectedTrackerCount);
         atlasText({91, 96, 178, 14}, count, 0, kMuted);
+
+        // Native scroll viewport: draw up to five intersecting rows, clipping
+        // all painted pixels to 110..293. The first and last rows can be
+        // partially visible while the finger drags the list.
+        gCounterClip = true;
+        gClipLeft = 55; gClipRight = 305;
+        gClipTop = 110; gClipBottom = 293;
         for (int i = 0; i < view.choiceCount; ++i) {
-            const int y = 110 + i * 46;
+            const int y = 110 + i * 46 - view.editRowOffsetPx;
             softCapsule(55, y, 250, 39, 9,
                         view.choices[i].checked ? 104 : 79,
                         view.choices[i].checked ? 190 : 117,
@@ -927,13 +934,15 @@ void drawDashboard(const MtgGameView &view) {
                       view.choices[i].label, 0,
                       view.choices[i].checked ? kIvory : kMuted);
         }
-        // A vertical scrollbar replaces the old horizontal page dots.
-        // The four visible checkboxes move up/down as the user swipes.
-        softCapsule(309, 111, 4, 180, 2, 64, 67, 67);
-        const int allRows = std::max(4, view.addPageCount + 3);
-        const int thumbH = std::max(23, 180 * 4 / allRows);
-        const int thumbY = 111 + (view.addPageCount > 1 ?
-            view.addPage * (180 - thumbH) / (view.addPageCount - 1) : 0);
+        gCounterClip = false;
+
+        // Scrollbar thumb reflects actual pixel scroll, not the number of a
+        // page. When the selection fits, it occupies the complete track.
+        softCapsule(309, 110, 4, 184, 2, 64, 67, 67);
+        const int contentPx = std::max(184,view.editTotalRows*46);
+        const int thumbH = std::clamp(184*184/contentPx,23,184);
+        const int thumbY = 110 + (view.editMaxScrollPx > 0 ?
+            view.editScrollPx*(184-thumbH)/view.editMaxScrollPx : 0);
         softCapsule(307, thumbY, 8, thumbH, 4, 229, 185, 107);
         atlasText({136, 318, 88, 17}, "DONE", 0, kGold);
         return;
@@ -1210,16 +1219,23 @@ DirtyRows calculateDamage(const PendingStatus &before,
 
     DirtyRows dirty;
     if (b.screen == MtgScreen::EditCounters) {
-        if (a.addPage != b.addPage || a.choiceCount != b.choiceCount) {
-            dirty.add(75, 336);
+        // Continuous scroll only changes the 184px viewport and scrollbar.
+        // Keep the modal title/footer stationary.
+        if (a.editScrollPx != b.editScrollPx ||
+            a.editFirstRow != b.editFirstRow ||
+            a.editRowOffsetPx != b.editRowOffsetPx ||
+            a.choiceCount != b.choiceCount) {
+            dirty.add(109, 296);
             return dirty;
         }
         if (a.selectedTrackerCount != b.selectedTrackerCount)
             dirty.add(94, 112);
-        for (int i = 0; i < b.choiceCount && i < 4; ++i)
+        for (int i = 0; i < b.choiceCount && i < 5; ++i)
             if (a.choices[i].checked != b.choices[i].checked ||
-                std::strcmp(a.choices[i].label,b.choices[i].label) != 0)
-                dirty.add(108+i*46,155+i*46);
+                std::strcmp(a.choices[i].label,b.choices[i].label) != 0) {
+                dirty.add(109,296);
+                break;
+            }
         return dirty;
     }
     if (b.screen != MtgScreen::Dashboard)
