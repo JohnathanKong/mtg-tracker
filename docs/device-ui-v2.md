@@ -19,8 +19,19 @@ This is the selected design for the Waveshare ESP32-S3-Knob-Touch-LCD-1.8
   numbers, labels or commander portrait are baked into it.** All current
   values and captions are drawn live by the firmware using measured GFX font
   metrics; the graphic remains visually stable while values change.
-- When no artwork has been synced, a dark smoky blue backdrop is displayed
-  behind the life number instead.
+- **You do not select a background on the ESP32-S3.** The portrait uses the
+  artwork saved with the active deck in MTG Tracker Desktop. The illustrative
+  character in design previews is only sample art; it is not shipped in the
+  firmware.
+- If that deck has no valid 360×360 image stored on the device, the portrait
+  shows a dark smoky blue fallback with **SYNC ART**. In the desktop app,
+  open the deck editor, confirm its imported artwork is visible, save the deck,
+  then open **Device Synchronization → Sync Deck Library**. A successful
+  transfer reports the **number of commander images actually stored**, so a
+  message saying `0 commander images` means nothing was uploaded.
+- Right-side numeric values and casts/tax labels are inset from both their
+  graphic panels and the physical round edge, with actual font bounds used
+  for positioning. Larger numbers automatically use a smaller font.
 
 ## Interaction
 
@@ -56,6 +67,6 @@ stored art and NVS game state. If the left artwork area is empty because a
 previous transfer failed, use the up-to-date desktop app to sync your deck
 again.
 
-This is a compile-tested UI implementation, not yet a verified photograph
+This is a firmware implementation, not yet a verified photograph
 of the physical LCD. Confirm touch alignment and visual readability on
 the actual device before calling the layout final.
