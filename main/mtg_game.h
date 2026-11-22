@@ -1,10 +1,21 @@
 #pragma once
 #include <cstdint>
 
-// Game-long counters are independent of desktop connectivity and saved locally.
-// New games reset current values; deck library synchronization does NOT do this.
-enum class MtgScreen : uint8_t { Dashboard, ChooseDeck, ConfirmReset };
-enum class MtgCounter : uint8_t { Life, Poison, Rad, Damage, Casts, Deaths };
+// Life, commander casts and derived next-cast tax are permanently visible.
+// The four tile slots are populated from the deck's selected trackers;
+// horizontal swipes move between groups of four without hiding Life/Casts/Tax.
+enum class MtgScreen : uint8_t { Dashboard, ChooseDeck, ConfirmReset, AddCounter };
+enum class MtgCounter : uint8_t { Life, Poison, Rad, Damage, Casts, Deaths, Dynamic };
+
+struct MtgTile {
+    char label[36]{};
+    int value = 0;
+    uint8_t accent = 0;
+    bool selected = false;
+};
+struct MtgMenuChoice {
+    char label[36]{};
+};
 
 struct MtgGameView {
     MtgScreen screen = MtgScreen::Dashboard;
@@ -16,8 +27,15 @@ struct MtgGameView {
     char deckId[96]{};
     bool hasArtwork = false;
     uint32_t artworkRevision = 0;
+
+    int page = 0, pageCount = 1;
+    int tileCount = 0;
+    MtgTile tiles[4]{};
+    int addPage = 0, addPageCount = 1;
+    int choiceCount = 0;
+    MtgMenuChoice choices[4]{};
 };
 
 void mtg_game_start();
-void mtg_game_reload_decks(); // Notify after verified profile sync
+void mtg_game_reload_decks(); // Notify after verified profile and artwork sync
 void mtg_game_view(MtgGameView &output);
