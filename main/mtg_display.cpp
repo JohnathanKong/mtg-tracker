@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 #include <string>
 
 #include "driver/ledc.h"
@@ -264,12 +265,12 @@ void applyOrnateSkin(const MtgGameView &view) {
     if (!gSkin) return;
     for (int y = 0; y < 360; ++y) {
         for (int x = 0; x < 360; ++x) {
-            const bool optionalLeft = y >= 250 && y <= 287 &&
-                                      x >= 46 && x <= 179;
-            const bool optionalRight = y >= 250 && y <= 287 &&
-                                       x >= 181 && x <= 315;
-            if ((optionalLeft && view.tileCount == 0) ||
-                (optionalRight && view.tileCount <= 1)) continue;
+            // Discard the old oversized tracker tiles. They were
+            // flattened into the source image with rectangular text masks
+            // that visibly broke the gold curves at native resolution.
+            // Compact AA counters and the Edit control are drawn live.
+            if (y >= 248 && y <= 292 && x >= 43 && x <= 319)
+                continue;
             const int player = y >= 211 && y <= 245 ?
                 (x >= 75 && x <= 140 ? 0 :
                  x >= 144 && x <= 215 ? 1 :
@@ -614,6 +615,88 @@ void atlasText(TextRect rect, const char *text, int fontSize,
     }
 }
 
+// Soft distance-field rounded capsules avoid the stair-stepped 1px edges of
+// pixel-box drawing. All geometry is native 360x360 and remains dynamic.
+void softCapsule(int x, int y, int w, int h, int radius,
+                 uint8_t borderR, uint8_t borderG, uint8_t borderB,
+                 bool selected = false) {
+    const float r = float(radius);
+    const float halfW = float(w) * 0.5f;
+    const float halfH = float(h) * 0.5f;
+    for (int py = 0; py < h; ++py) {
+        for (int px = 0; px < w; ++px) {
+            const float qx = std::fabs(float(px) + 0.5f - halfW) - (halfW - r);
+            const float qy = std::fabs(float(py) + 0.5f - halfH) - (halfH - r);
+            const float outsideX = std::max(0.0f, qx);
+            const float outsideY = std::max(0.0f, qy);
+            const float dist = std::sqrt(outsideX * outsideX +
+                                         outsideY * outsideY) +
+                               std::min(0.0f, std::max(qx, qy)) - r;
+            const float coverage = std::clamp(0.65f - dist, 0.0f, 1.0f);
+            if (coverage <= 0) continue;
+            blendInk(x + px, y + py,
+                     selected ? 15 : 8, selected ? 49 : 30, 31,
+                     int(195.0f * coverage));
+            const float stroke = std::clamp(1.05f - std::fabs(dist + 0.55f),
+                                             0.0f, 1.0f);
+            if (stroke > 0.0f)
+                blendInk(x + px, y + py, borderR, borderG, borderB,
+                         int(245.0f * stroke));
+        }
+    }
+}
+void drawCheckBox(int x, int y, bool checked) {
+    softCapsule(x, y, 20, 20, 5,
+                checked ? 104 : 114, checked ? 230 : 119,
+                checked ? 196 : 117, checked);
+    if (checked) {
+        // Distinct, non-touch-adjusting check mark.
+        for (int t = 0; t < 7; ++t) {
+            blendInk(x + 4 + t, y + 10 + t / 2, 189, 253, 228, 255);
+            blendInk(x + 4 + t, y + 11 + t / 2, 189, 253, 228, 200);
+        }
+        for (int t = 0; t < 9; ++t) {
+            blendInk(x + 10 + t, y + 13 - t, 189, 253, 228, 255);
+            blendInk(x + 10 + t, y + 14 - t, 189, 253, 228, 200);
+        }
+    }
+}
+void drawSmallCounter(int x, int y, const MtgTile &tile) {
+    softCapsule(x, y, 106, 25, 12,
+                tile.selected ? 114 : 190,
+                tile.selected ? 230 : 152,
+                tile.selected ? 209 : 91, tile.selected);
+    char label[36];
+    std::snprintf(label, sizeof(label), "%s", tile.label);
+    if (std::strncmp(label, "Commander ", 10) == 0) {
+        std::snprintf(label, sizeof(label), "%s", tile.label + 10);
+    }
+    // Keep long labels legible inside a small pill. Show the complete
+    // caption across two small lines when the name contains a word break.
+    int separator = -1;
+    const int len = int(std::strlen(label));
+    if (len > 11) for (int i = 1; i < len; ++i)
+        if (label[i] == ' ' && i <= 10 && len - i - 1 <= 10) {
+            separator = i;
+            break;
+        }
+    if (separator >= 0) {
+        label[separator] = '\0';
+        atlasText({x + 5, y + 1, 69, 12}, label, 0, kIvory);
+        atlasText({x + 5, y + 12, 69, 11}, label + separator + 1, 0, kIvory);
+    } else {
+        atlasText({x + 5, y + 4, 70, 16}, label, 0, kIvory);
+    }
+    char value[20];
+    std::snprintf(value, sizeof(value), "%d", tile.value);
+    atlasText({x + 78, y + 3, 26, 20}, value, 1,
+              tile.selected ? kTeal : kIvory);
+}
+void drawEditCounterButton() {
+    softCapsule(283, 259, 33, 25, 12, 214, 180, 111);
+    atlasText({285, 264, 29, 16}, "EDIT", 0, kGold);
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     bool reuse = gBackdrop && gBackdropValid &&
@@ -670,18 +753,25 @@ void drawDashboard(const MtgGameView &view) {
         return;
     }
 
-    if (view.screen == MtgScreen::AddCounter) {
+    if (view.screen == MtgScreen::EditCounters) {
         chromePanel(36, 72, 288, 244, 19, kGold, kBg);
-        aaText({69, 79, 222, 23}, "ADD COUNTER", FreeSans18pt7b, 19, kGold);
+        atlasText({73, 78, 213, 23}, "EDIT COUNTERS", 0, kGold);
+        char count[24];
+        std::snprintf(count, sizeof(count), "%d SELECTED", view.selectedTrackerCount);
+        atlasText({91, 96, 178, 14}, count, 0, kMuted);
         for (int i = 0; i < view.choiceCount; ++i) {
-            const int y = 104 + i * 48;
-            chromePanel(55, y, 250, 40, 10,
-                        color(93, 160, 158), kSurface);
-            aaText({66, y + 6, 227, 28},
-                   view.choices[i].label, FreeSans18pt7b, 15, kIvory);
+            const int y = 110 + i * 46;
+            softCapsule(55, y, 250, 39, 9,
+                        view.choices[i].checked ? 104 : 79,
+                        view.choices[i].checked ? 190 : 117,
+                        view.choices[i].checked ? 162 : 130);
+            drawCheckBox(69, y + 10, view.choices[i].checked);
+            atlasText({101, y + 7, 186, 25},
+                      view.choices[i].label, 0,
+                      view.choices[i].checked ? kIvory : kMuted);
         }
-        drawPagination(view.addPage, view.addPageCount, 310);
-        aaText({135, 318, 90, 18}, "BACK", FreeSans18pt7b, 12, kGold);
+        drawPagination(view.addPage, view.addPageCount, 306);
+        atlasText({136, 318, 88, 17}, "DONE", 0, kGold);
         return;
     }
 
@@ -716,26 +806,11 @@ void drawDashboard(const MtgGameView &view) {
         atlasText({valueX[slot], 211, 29, 29}, number, 1,
                   view.selectedDamage == opponent - 1 ? kTeal : kIvory);
     }
-    // At most TWO optional counters occupy the final row, never four.
-    // When none are configured, the chrome leaves both panels absent.
-    const int tileX[2] = {49, 182};
-    for (int tile = 0; tile < view.tileCount && tile < 2; ++tile) {
-        const MtgTile &entry = view.tiles[tile];
-        const int x = tileX[tile];
-        char label[36];
-        std::snprintf(label, sizeof(label), "%s", entry.label);
-        // One-line "CMD DEATHS"/"CMD DAMAGE" reads better than clipped text.
-        if (std::strncmp(label, "Commander ", 10) == 0) {
-            char shorter[36];
-            std::snprintf(shorter, sizeof(shorter), "CMD %.25s", label + 10);
-            std::snprintf(label, sizeof(label), "%s", shorter);
-        }
-        atlasText({x + 25, 260, 72, 20}, label, 0,
-                  entry.selected ? kTeal : kIvory);
-        std::snprintf(number, sizeof(number), "%d", entry.value);
-        atlasText({x + 99, 255, 27, 30}, number, 1,
-                  entry.selected ? kTeal : kIvory);
-    }
+    // Compact counters leave room for an always-present EDIT button.
+    // The older oversized bitmap panels are removed from the backdrop.
+    if (view.tileCount > 0) drawSmallCounter(50, 259, view.tiles[0]);
+    if (view.tileCount > 1) drawSmallCounter(165, 259, view.tiles[1]);
+    drawEditCounterButton();
 
     // Only counter pages move on a horizontal swipe. Life, Casts, Tax and
     // Commander Damage always remain visible.
@@ -745,8 +820,7 @@ void drawDashboard(const MtgGameView &view) {
         fillRound(dotStart + i * 10 - 2, 302, 5, 5, 2,
                   i == view.page ? kGold : kGoldDim);
     }
-    // Secondary Add Counter button is kept distinct from damage +/-.
-    drawPlusNavigation(285, 306);
+    // Optional counter selection is handled by EDIT, not a plus icon.
 }
 void drawShell() {
     std::fill(gFrame, gFrame + kWidth * kHeight, kBg);
