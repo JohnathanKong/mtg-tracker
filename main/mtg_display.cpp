@@ -407,7 +407,7 @@ void textInPanel(TextRect rect, const char *text,
 // are rendered live, so none of the example dragon/numbers are baked in.
 void fillRound(int x, int y, int w, int h, int radius, uint16_t ink) {
     if (w <= 0 || h <= 0) return;
-    radius = std::clamp(radius, 1, std::min(w, h) / 2);
+    radius = std::clamp(radius, 1, std::max(1, (std::min(w, h) - 1) / 2));
     for (int py = 0; py < h; ++py) {
         for (int px = 0; px < w; ++px) {
             const int ox = px - std::clamp(px, radius, w - radius - 1);
