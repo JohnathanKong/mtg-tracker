@@ -83,6 +83,7 @@ struct Saved {
 
 std::vector<DeckMeta> gDecks;
 std::vector<ActiveCounter> gTrackers;
+std::vector<ActiveCounter> gHiddenTrackers; // Preserve values while unchecked.
 std::vector<CounterDef> gAvailable;
 int gActiveTracker = -1;
 constexpr int kMaxOpponents = 12;
@@ -145,14 +146,21 @@ bool alreadyActive(const std::string &id) {
 }
 void refreshAvailable() {
     gAvailable.clear();
-    for (const auto &entry : kCatalog)
-        if (!isPermanent(entry.id) && !alreadyActive(entry.id))
-            gAvailable.push_back(entry);
-    if (gActiveDeckIndex >= 0 && gActiveDeckIndex < int(gDecks.size())) {
+    // Active trackers first, then everything else. Each option has one row
+    // whether or not it is currently shown on the dashboard.
+    auto append = [&](const std::string &id, const std::string &label) {
+        if (isPermanent(id)) return;
+        for (const CounterDef &existing : gAvailable)
+            if (existing.id == id) return;
+        gAvailable.push_back({id, label});
+    };
+    for (const auto &active : gTrackers) append(active.id, active.label);
+    for (const auto &entry : kCatalog) append(entry.id, entry.label);
+    if (gActiveDeckIndex >= 0 && gActiveDeckIndex < int(gDecks.size()))
         for (const auto &entry : gDecks[size_t(gActiveDeckIndex)].custom)
-            if (!alreadyActive(entry.id)) gAvailable.push_back(entry);
-    }
+            append(entry.id, entry.label);
 }
+
 void refreshCounterView() {
     gView.pageCount = std::max(1, int((gTrackers.size() + 1) / 2));
     gView.page = std::clamp(gView.page, 0, gView.pageCount - 1);
@@ -183,19 +191,23 @@ void refreshCounterView() {
         gView.damageValues[n] = idx < gOpponentCount ? gOpponentDamage[idx] : 0;
     }
     refreshAvailable();
+    gView.selectedTrackerCount = int(gTrackers.size());
     gView.addPageCount = std::max(1, int((gAvailable.size() + 3) / 4));
     gView.addPage = std::clamp(gView.addPage, 0, gView.addPageCount - 1);
     gView.choiceCount = 0;
     for (auto &choice : gView.choices) choice = MtgMenuChoice{};
     for (int pos = gView.addPage * 4;
          pos < int(gAvailable.size()) && pos < (gView.addPage + 1) * 4; ++pos) {
-        std::snprintf(gView.choices[gView.choiceCount++].label,
-                      sizeof(gView.choices[0].label), "%s",
-                      gAvailable[size_t(pos)].label.c_str());
+        MtgMenuChoice &choice = gView.choices[gView.choiceCount++];
+        const CounterDef &definition = gAvailable[size_t(pos)];
+        std::snprintf(choice.label, sizeof(choice.label), "%s",
+                      definition.label.c_str());
+        choice.checked = alreadyActive(definition.id);
     }
 }
 void rebuildDefaults() {
     gTrackers.clear();
+    gHiddenTrackers.clear();
     if (gActiveDeckIndex < 0 || gActiveDeckIndex >= int(gDecks.size())) return;
     for (const auto &definition : gDecks[size_t(gActiveDeckIndex)].defaults) {
         if (gTrackers.size() >= kMaxActiveCounters) break;
@@ -538,7 +550,7 @@ void swipe(int direction, int originY) {
             const int target = std::clamp(gView.page + direction, 0, gView.pageCount - 1);
             if (target != gView.page) { gView.page = target; publish(); }
         }
-    } else if (gView.screen == MtgScreen::AddCounter) {
+    } else if (gView.screen == MtgScreen::EditCounters) {
         const int target = std::clamp(gView.addPage + direction, 0, gView.addPageCount - 1);
         if (target != gView.addPage) { gView.addPage = target; publish(); }
     } else if (gView.screen == MtgScreen::ChooseDeck && !gDecks.empty()) {
@@ -601,7 +613,7 @@ void tap(int x, int y) {
         selectDeck(gView.deckIndex);
         return;
     }
-    if (gView.screen == MtgScreen::AddCounter) {
+    if (gView.screen == MtgScreen::EditCounters) {
         if (y < 90 || y >= 318) {
             gView.screen = MtgScreen::Dashboard;
             publish();
@@ -658,12 +670,12 @@ void tap(int x, int y) {
             gOpponentSelected = -1;
             gView.selected = MtgCounter::Dynamic;
         } else if (gTrackers.size() < kMaxActiveCounters) {
-            gView.screen = MtgScreen::AddCounter;
+            gView.screen = MtgScreen::EditCounters;
             gView.addPage = 0;
         }
     } else if (y >= 293 && y <= 334 && x >= 260 && x <= 322) {
         // Discreet Add Counter affordance, distinct from opponent +/- buttons.
-        gView.screen = MtgScreen::AddCounter;
+        gView.screen = MtgScreen::EditCounters;
         gView.addPage = 0;
     }
     publish();
