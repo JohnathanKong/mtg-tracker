@@ -26,6 +26,8 @@ jobs:
         run: g++ -std=c++17 -Wall -Wextra -Werror -I main tests/test_art_header.cpp -o /tmp/test_art_header && /tmp/test_art_header
       - name: Verify click-aligned rotary pulses
         run: g++ -std=c++17 -Wall -Wextra -Werror -I main tests/test_rotary.cpp -o /tmp/test_rotary && /tmp/test_rotary
+      - name: Verify continuous scroll geometry and touch row hit testing
+        run: g++ -std=c++17 -Wall -Wextra -Werror -I main tests/test_scroll.cpp -o /tmp/test_scroll && /tmp/test_scroll
       - name: Build using Espressif's ESP-IDF v6.1 container
         uses: espressif/esp-idf-ci-action@v1
         with:
