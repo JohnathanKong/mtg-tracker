@@ -43,12 +43,12 @@ TaskHandle_t gDisplayTask = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
-uint8_t *gSkin = nullptr;      // native 360x360 indexed original fantasy asset
+uint8_t *gSkin = nullptr;      // 4-bit packed 360x360 antialiased ornate chrome overlay
 char gLoadedArtId[96] = {};
 uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
-extern "C" const uint8_t skin_start[] asm("_binary_ui_portrait_hud_360_lz4_start");
-extern "C" const uint8_t skin_end[] asm("_binary_ui_portrait_hud_360_lz4_end");
+extern "C" const uint8_t skin_start[] asm("_binary_ui_ornate_hud_360_lz4_start");
+extern "C" const uint8_t skin_end[] asm("_binary_ui_ornate_hud_360_lz4_end");
 
 
 // All USB callbacks update only this small pending status, never the LCD
@@ -90,7 +90,7 @@ inline void pixel(int x, int y, uint16_t ink);
 // Actual image-generated portrait/list HUD asset (with empty text regions).
 // Bytes: native 360x360 256-color palette and LZ4-compressed palette indices.
 // User-supplied commander art and game numbers are drawn separately at runtime.
-constexpr size_t kPaletteByteSize = 256 * 3;
+constexpr size_t kPaletteByteSize = 16 * 4;
 
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
@@ -101,7 +101,7 @@ bool decodeSkin() {
     const uint8_t *src = skin_start + kPaletteByteSize;
     const uint8_t *const end = skin_end;
     uint8_t *out = gSkin;
-    uint8_t *const outEnd = gSkin + 360 * 360;
+    uint8_t *const outEnd = gSkin + 360 * 360 / 2;
     while (src < end) {
         const uint8_t token = *src++;
         size_t literal = token >> 4;
@@ -173,49 +173,42 @@ void loadArtFor(const MtgGameView &view) {
     ESP_LOGI(kTag, "Deck art %s: %s", path, gHasArt ? "loaded" : "invalid");
 }
 
-// Compose the approved image-designed chrome with the *actual uploaded deck
-// artwork*. The artist-rendered base has empty panels: no stale baked-in values.
-void drawGameSkin() {
-    for (int y = 0; y < kHeight; ++y) {
-        for (int x = 0; x < kWidth; ++x) {
-            const int dx = x - 180, dy = y - 180;
-            const int radius2 = dx * dx + dy * dy;
-            if (radius2 >= 179 * 179) {
-                pixel(x, y, kBg);
-                continue;
-            }
-            const uint8_t idx = gSkin ? gSkin[y * kWidth + x] : 0;
-            const uint8_t *swatch = skin_start + size_t(idx) * 3;
-            int red = swatch[0], green = swatch[1], blue = swatch[2];
 
-            // Restrict the commander portrait to the upper-left photo area.
-            // The image is center-cropped instead of sampling its left edge,
-            // which previously hid most commanders on the portrait layout.
-            // Feather toward the life number and the panel edges.
-            if (gHasArt && x >= 11 && x <= 170 && y >= 12 && y <= 236) {
-                const int ringFade = std::clamp((177 * 177 - radius2) / 70, 0, 255);
-                const int rightFade = std::clamp((171 - x) * 255 / 39, 0, 255);
-                const int bottomFade = std::clamp((227 - y) * 255 / 67, 0, 255);
-                const int topFade = std::clamp((y - 12) * 255 / 12, 0, 255);
-                const int alpha = std::min({235, ringFade, rightFade,
-                                            bottomFade, topFade});
-                if (alpha > 0) {
-                    const int imageX = std::clamp(
-                        180 + (x - 88) * 5 / 4, 0, 359);
-                    const int imageY = std::clamp(
-                        153 + (y - 111) * 5 / 4, 0, 359);
-                    const uint16_t swapped = gArt[imageY * 360 + imageX];
-                    const uint16_t rgb =
-                        uint16_t((swapped >> 8) | (swapped << 8));
-                    const int artR = ((rgb >> 11) & 31) * 255 / 31;
-                    const int artG = ((rgb >> 5) & 63) * 255 / 63;
-                    const int artB = (rgb & 31) * 255 / 31;
-                    red = (artR * alpha + red * (255 - alpha)) / 255;
-                    green = (artG * alpha + green * (255 - alpha)) / 255;
-                    blue = (artB * alpha + blue * (255 - alpha)) / 255;
-                }
-            }
-            pixel(x, y, color(unsigned(red), unsigned(green), unsigned(blue)));
+
+// The artwork and all numbers remain live. This indexed decorative layer
+// contains ONLY antialiased gold curves, ornamental crests and blank counter
+// capsules. The palette is RGBA; index zero is fully transparent.
+void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha) {
+    if (x < 0 || y < 0 || x >= kWidth || y >= kHeight || alpha <= 0) return;
+    if (alpha >= 255) {
+        pixel(x, y, color(red, green, blue));
+        return;
+    }
+    const uint16_t stored = gFrame[y * kWidth + x];
+    const uint16_t current = uint16_t((stored >> 8) | (stored << 8));
+    const int r = ((current >> 11) & 31) * 255 / 31;
+    const int g = ((current >> 5) & 63) * 255 / 63;
+    const int b = (current & 31) * 255 / 31;
+    pixel(x, y, color(unsigned((red * alpha + r * (255 - alpha) + 127) / 255),
+                      unsigned((green * alpha + g * (255 - alpha) + 127) / 255),
+                      unsigned((blue * alpha + b * (255 - alpha) + 127) / 255)));
+}
+void applyOrnateSkin(const MtgGameView &view) {
+    if (!gSkin) return;
+    for (int y = 0; y < 355; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            // The decorative counter modules must appear only if configured.
+            const int slot =
+                (y >= 228 && y <= 263 && x >= 30 && x <= 178) ? 0 :
+                (y >= 228 && y <= 263 && x >= 182 && x <= 329) ? 1 :
+                (y >= 269 && y <= 302 && x >= 54 && x <= 179) ? 2 :
+                (y >= 269 && y <= 302 && x >= 181 && x <= 306) ? 3 : -1;
+            if (slot >= view.tileCount && slot >= 0) continue;
+            const size_t off = size_t(y) * 360 + x;
+            const uint8_t packed = gSkin[off / 2];
+            const uint8_t idx = (off & 1) ? (packed & 0x0Fu) : (packed >> 4);
+            const uint8_t *c = skin_start + 4 * idx;
+            if (c[3] > 0) blendInk(x, y, c[0], c[1], c[2], c[3]);
         }
     }
 }
@@ -532,6 +525,7 @@ void drawCounterTile(int x, int y, int w, int h, const MtgTile &tile) {
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     drawHeroArt();
+    applyOrnateSkin(view);
 
     if (view.deckCount == 0) {
         chromePanel(58, 132, 244, 103, 16, kGold, kSurface);
@@ -748,7 +742,7 @@ bool initDisplayHardware() {
     gArt = static_cast<uint16_t *>(heap_caps_malloc(
         360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gSkin = static_cast<uint8_t *>(heap_caps_malloc(
-        360 * 360, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        360 * 360 / 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (gSkin && !decodeSkin()) {
         ESP_LOGE(kTag, "Bundled fantasy image asset invalid");
         heap_caps_free(gSkin);
