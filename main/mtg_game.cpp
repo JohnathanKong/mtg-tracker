@@ -700,7 +700,6 @@ void tap(int x, int y) {
         if (y >= 110 && y < 294 && x >= 55 && x <= 305) {
             const int index = mtg_scroll::tappedIndex(
                 y,gView.editScrollPx,int(gAvailable.size()));
-            const int row = index - gView.editFirstRow;
             if (index >= 0 && index < int(gAvailable.size())) {
                 const CounterDef item = gAvailable[size_t(index)];
                 int active = -1;
