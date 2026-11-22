@@ -261,21 +261,16 @@ void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha)
                       unsigned((green * alpha + g * (255 - alpha) + 127) / 255),
                       unsigned((blue * alpha + b * (255 - alpha) + 127) / 255)));
 }
-void applyOrnateSkin(const MtgGameView &view) {
+void applyOrnateSkin(const MtgGameView &/*view*/) {
     if (!gSkin) return;
     for (int y = 0; y < 360; ++y) {
         for (int x = 0; x < 360; ++x) {
-            // Discard the old oversized tracker tiles. They were
-            // flattened into the source image with rectangular text masks
-            // that visibly broke the gold curves at native resolution.
-            // Compact AA counters and the Edit control are drawn live.
-            if (y >= 248 && y <= 292 && x >= 43 && x <= 319)
-                continue;
-            const int player = y >= 211 && y <= 245 ?
-                (x >= 75 && x <= 140 ? 0 :
-                 x >= 144 && x <= 215 ? 1 :
-                 x >= 217 && x <= 286 ? 2 : -1) : -1;
-            if (player >= 0 && !view.damageIndices[player]) continue;
+            // The exported mockup had incomplete/masked-out borders around
+            // Life, players, and the circle. Retain only its unobstructed
+            // ornamentation above the HUD; the entire interactive interface
+            // is now drawn with native complete shapes.
+            const int dx = x-180, dy = y-180;
+            if (y >= 96 || dx*dx + dy*dy >= 165*165) continue;
             const size_t off = size_t(y) * 360u + size_t(x);
             const uint8_t index = gSkin[off * 2u];
             const uint8_t alpha = gSkin[off * 2u + 1u];
@@ -441,9 +436,9 @@ void drawHeroArt() {
         for (int x = 0; x < kWidth; ++x) {
             const int dx = x - 180, dy = y - 180;
             const int d2 = dx * dx + dy * dy;
-            if (d2 > 179 * 179) { pixel(x, y, kBg); continue; }
-            if (d2 > 175 * 175) { pixel(x, y, kGold); continue; }
-            if (d2 > 172 * 172) { pixel(x, y, kGoldDim); continue; }
+            // One circular edge is drawn separately. Do not compose the
+            // old double rings into the user artwork.
+            if (d2 > 173 * 173) { pixel(x, y, kBg); continue; }
 
             int red = 7, green = y < 220 ? 20 : 13, blue = y < 220 ? 26 : 18;
             if (gHasArt && y < 213) {
@@ -461,14 +456,7 @@ void drawHeroArt() {
             pixel(x, y, color(unsigned(red), unsigned(green), unsigned(blue)));
         }
     }
-    // A thin second inner ring, kept off the pixels needed by the tiles.
-    for (int y = 6; y < 354; ++y)
-        for (int x = 6; x < 354; ++x) {
-            const int dx = x - 180, dy = y - 180;
-            const int r2 = dx * dx + dy * dy;
-            if (r2 >= 171 * 171 && r2 < 172 * 172)
-                pixel(x, y, kGoldDim);
-        }
+
 }
 void drawPagination(int current, int total, int y) {
     if (total <= 1) return;
