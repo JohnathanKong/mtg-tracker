@@ -758,6 +758,7 @@ void drawDashboard(const MtgGameView &view) {
     // Static LIFE / CASTS / TAX / COMMANDER DAMAGE headings and gold filigree
     // are part of the screenshot-derived chrome. Only live values are drawn.
     char number[24];
+    atlasText({152, 102, 56, 20}, "LIFE", 0, kGold);
     std::snprintf(number, sizeof(number), "%d", view.life);
     atlasText({134, 120, 92, 45}, number, 2,
               view.selected == MtgCounter::Life ? kTeal : kIvory);
@@ -782,10 +783,6 @@ void drawDashboard(const MtgGameView &view) {
         atlasText({valueX[slot], 211, 29, 29}, number, 1,
                   view.selectedDamage == opponent - 1 ? kTeal : kIvory);
     }
-    // A quiet page indicator appears only when there are more than 3 players.
-    if (view.damagePageCount > 1)
-        atlasText({147, 240, 66, 11}, "P", 0, kGold);
-
     // At most TWO optional counters occupy the final row, never four.
     // When none are configured, the chrome leaves both panels absent.
     const int tileX[2] = {49, 182};
