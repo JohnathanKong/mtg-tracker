@@ -654,8 +654,8 @@ void tap(int x, int y) {
             publish();
             return;
         }
-        if (y >= 104 && y < 296 && x >= 55 && x <= 305) {
-            const int row = (y - 104) / 48;
+        if (y >= 110 && y < 294 && x >= 55 && x <= 305) {
+            const int row = (y - 110) / 46;
             const int index = gView.addPage * 4 + row;
             if (row >= 0 && row < 4 && index < int(gAvailable.size())) {
                 const CounterDef item = gAvailable[size_t(index)];
