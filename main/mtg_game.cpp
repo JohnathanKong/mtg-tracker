@@ -323,8 +323,31 @@ bool loadDecksFromFlash() {
         const cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
         const cJSON *commander = cJSON_GetObjectItemCaseSensitive(item, "commander");
         if (!cJSON_IsString(id) || !cJSON_IsString(name)) continue;
-        DeckMeta d{ id->valuestring, name->valuestring,
-                   cJSON_IsString(commander) ? commander->valuestring : "" };
+        DeckMeta d;
+        d.id = id->valuestring;
+        d.name = name->valuestring;
+        d.commander = cJSON_IsString(commander) ? commander->valuestring : "";
+        const cJSON *custom = cJSON_GetObjectItemCaseSensitive(item, "customTrackers");
+        const cJSON *entry = nullptr;
+        cJSON_ArrayForEach(entry, custom) {
+            const cJSON *cid = cJSON_GetObjectItemCaseSensitive(entry, "id");
+            const cJSON *label = cJSON_GetObjectItemCaseSensitive(entry, "label");
+            if (cJSON_IsString(cid) && cJSON_IsString(label))
+                d.custom.push_back({cid->valuestring, label->valuestring});
+        }
+        const cJSON *trackers = cJSON_GetObjectItemCaseSensitive(item, "trackers");
+        cJSON_ArrayForEach(entry, trackers) {
+            if (!cJSON_IsString(entry)) continue;
+            const std::string trackerId = entry->valuestring;
+            if (isPermanent(trackerId)) continue;
+            std::string label = labelFor(trackerId);
+            for (const auto &definition : d.custom)
+                if (definition.id == trackerId) { label = definition.label; break; }
+            bool duplicate = false;
+            for (const auto &definition : d.defaults)
+                if (definition.id == trackerId) { duplicate = true; break; }
+            if (!duplicate) d.defaults.push_back({trackerId, label});
+        }
         gDecks.push_back(std::move(d));
     }
     cJSON_Delete(root);
