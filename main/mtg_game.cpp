@@ -193,12 +193,13 @@ void refreshCounterView() {
     }
     refreshAvailable();
     gView.selectedTrackerCount = int(gTrackers.size());
-    gView.addPageCount = std::max(1, int((gAvailable.size() + 3) / 4));
+    // A vertical scrolling list with a four-row viewport, not horizontal pages.
+    gView.addPageCount = std::max(1, int(gAvailable.size()) - 3);
     gView.addPage = std::clamp(gView.addPage, 0, gView.addPageCount - 1);
     gView.choiceCount = 0;
     for (auto &choice : gView.choices) choice = MtgMenuChoice{};
-    for (int pos = gView.addPage * 4;
-         pos < int(gAvailable.size()) && pos < (gView.addPage + 1) * 4; ++pos) {
+    for (int pos = gView.addPage;
+         pos < int(gAvailable.size()) && pos < gView.addPage + 4; ++pos) {
         MtgMenuChoice &choice = gView.choices[gView.choiceCount++];
         const CounterDef &definition = gAvailable[size_t(pos)];
         std::snprintf(choice.label, sizeof(choice.label), "%s",
@@ -571,7 +572,7 @@ void knobStep(int direction) {
     changeCounter(direction);
 }
 
-void swipe(int direction, int originY) {
+void swipe(int direction, int originY, bool vertical) {
     if (gView.screen == MtgScreen::Dashboard) {
         if (originY >= 195 && originY <= 253) {
             const int maxPage = std::max(0, (gOpponentCount - 1) / 3);
@@ -585,6 +586,8 @@ void swipe(int direction, int originY) {
             if (target != gView.page) { gView.page = target; publish(); }
         }
     } else if (gView.screen == MtgScreen::EditCounters) {
+        // Never navigate the editor horizontally: finger swipes scroll rows.
+        if (!vertical) return;
         const int target = std::clamp(gView.addPage + direction, 0, gView.addPageCount - 1);
         if (target != gView.addPage) { gView.addPage = target; publish(); }
     } else if (gView.screen == MtgScreen::ChooseDeck && !gDecks.empty()) {
@@ -657,7 +660,7 @@ void tap(int x, int y) {
         }
         if (y >= 110 && y < 294 && x >= 55 && x <= 305) {
             const int row = (y - 110) / 46;
-            const int index = gView.addPage * 4 + row;
+            const int index = gView.addPage + row;
             if (row >= 0 && row < 4 && index < int(gAvailable.size())) {
                 const CounterDef item = gAvailable[size_t(index)];
                 int active = -1;
@@ -787,10 +790,21 @@ void task(void *) {
         if (!currentlyDown && down && !holdTriggered) {
             const int dx = touchX - startX;
             const int dy = touchY - startY;
-            if (std::abs(dx) > 42 && std::abs(dx) > std::abs(dy) * 13 / 10)
-                swipe(dx < 0 ? +1 : -1, startY);
-            else if (std::abs(dx) < 28 && std::abs(dy) < 28)
+            if (gView.screen == MtgScreen::EditCounters) {
+                // Natural vertical scrolling: up reveals later entries.
+                // No horizontal pagination in this modal.
+                if (std::abs(dy) > 28 && std::abs(dy) > std::abs(dx))
+                    swipe(dy < 0 ? +std::max(1, std::abs(dy) / 45)
+                                 : -std::max(1, std::abs(dy) / 45),
+                          startY, true);
+                else if (std::abs(dx) < 28 && std::abs(dy) < 28)
+                    tap(touchX, touchY);
+            } else if (std::abs(dx) > 42 &&
+                       std::abs(dx) > std::abs(dy) * 13 / 10) {
+                swipe(dx < 0 ? +1 : -1, startY, false);
+            } else if (std::abs(dx) < 28 && std::abs(dy) < 28) {
                 tap(touchX, touchY);
+            }
         }
         down = currentlyDown;
 
