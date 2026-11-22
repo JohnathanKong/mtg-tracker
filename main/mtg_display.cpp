@@ -483,45 +483,48 @@ void drawTinyMark(int centerX, int centerY, uint16_t accent) {
         pixel(centerX + span, centerY + dy, accent);
     }
 }
-void drawTileLabel(int x, int y, int w, const char *full, uint16_t ink) {
-    // The 5x7 pixel font is deliberate: long "COMMANDER DAMAGE" labels can
-    // use two rows inside the 34px capsule without overlapping the value.
+// The antialiased text implementation is below the geometry helpers.
+void aaText(TextRect rect, const char *text, const GFXfont &font,
+            int desiredHeight, uint16_t ink);
+
+void drawTileLabel(int x, int y, int w, int h, const char *full, uint16_t ink) {
     char text[36]{};
     std::snprintf(text, sizeof(text), "%s", full);
     for (char &c : text) c = char(std::toupper(static_cast<unsigned char>(c)));
-    const int len = int(std::strlen(text));
-    const int maxLetters = std::max(3, std::min(15, w / 6));
-    if (len <= maxLetters) {
-        printAt(x + w / 2, y + 10, text, 1, ink);
-        return;
+    const int count = int(std::strlen(text));
+    // Compact but legible two-line captions, no clipped enormous fallback.
+    int separator = -1;
+    if (count > 10) {
+        for (int i = 1; i < count; ++i)
+            if (text[i] == ' ' && i <= 13 && count - i - 1 <= 13) {
+                separator = i;
+                break;
+            }
     }
-    int split = -1;
-    for (int i = 1; i < len; ++i)
-        if (text[i] == ' ' && i <= maxLetters &&
-            len - i - 1 <= maxLetters) { split = i; break; }
-    if (split < 0) {
-        char cut[20]{};
-        std::snprintf(cut, sizeof(cut), "%.*s", maxLetters, text);
-        printAt(x + w / 2, y + 10, cut, 1, ink);
-        return;
+    if (separator >= 0) {
+        text[separator] = '\0';
+        aaText({x, y + 1, w, h / 2 - 1}, text, FreeSans18pt7b, 10, ink);
+        aaText({x, y + h / 2, w, h / 2 - 1}, text + separator + 1,
+               FreeSans18pt7b, 10, ink);
+    } else {
+        aaText({x, y + 1, w, h - 2}, text, FreeSans18pt7b, 11, ink);
     }
-    text[split] = '\0';
-    printAt(x + w / 2, y + 6, text, 1, ink);
-    printAt(x + w / 2, y + 17, text + split + 1, 1, ink);
 }
 void drawCounterTile(int x, int y, int w, int h, const MtgTile &tile) {
-    const uint16_t accent = tile.selected ? color(113, 235, 239) : accentFor(tile.accent);
-    chromePanel(x, y, w, h, 9, accent, color(17, 20, 27));
-    fillRect(x + 2, y + 5, 3, h - 10, accent);
-    drawTinyMark(x + 16, y + h / 2, accent);
+    const uint16_t accent = tile.selected ? kTeal : accentFor(tile.accent);
+    // Decoration is from the pre-rendered curved transparent skin. No
+    // rectangular fills are applied over its antialiased gold contours.
+    if (tile.selected) {
+        fillRect(x + 19, y + h - 5, std::max(1, w - 39), 1, kTeal);
+    }
     char value[20];
     std::snprintf(value, sizeof(value), "%d", tile.value);
-    const int valueWidth = h < 35 ? 28 : 31;
-    drawTileLabel(x + 26, y, w - 29 - valueWidth, tile.label, kIvory);
-    textInPanel({x + w - valueWidth - 4, y + 3, valueWidth, h - 6},
-                value, FreeSans18pt7b, tile.selected ? kTeal : kIvory);
+    const int valueWidth = h < 35 ? 31 : 35;
+    drawTileLabel(x + 8, y + 1, w - valueWidth - 13, h - 2,
+                  tile.label, tile.selected ? accent : kIvory);
+    aaText({x + w - valueWidth - 5, y + 3, valueWidth, h - 6},
+           value, FreeSans18pt7b, 22, tile.selected ? kTeal : kIvory);
 }
-
 
 // Antialias by integrating sixteen subpixel samples from the larger bundled
 // GFX glyphs. Labels are downsampled from 18pt shapes rather than rendering
