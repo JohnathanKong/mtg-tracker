@@ -112,6 +112,75 @@ void nvsKey(char key[16], const std::string &id) {
                   static_cast<unsigned long>(crcId(id)));
 }
 
+
+int legacyValue(const std::string &id) {
+    if (id == "poison") return gView.poison;
+    if (id == "rad") return gView.rad;
+    if (id == "commander_damage") return gView.damage;
+    if (id == "commander_deaths") return gView.deaths;
+    return 0;
+}
+void setLegacyValue(const std::string &id, int value) {
+    if (id == "poison") gView.poison = value;
+    if (id == "rad") gView.rad = value;
+    if (id == "commander_damage") gView.damage = value;
+    if (id == "commander_deaths") gView.deaths = value;
+}
+bool alreadyActive(const std::string &id) {
+    for (const auto &counter : gTrackers)
+        if (counter.id == id) return true;
+    return false;
+}
+void refreshAvailable() {
+    gAvailable.clear();
+    for (const auto &entry : kCatalog)
+        if (!alreadyActive(entry.id)) gAvailable.push_back(entry);
+    if (gActiveDeckIndex >= 0 && gActiveDeckIndex < int(gDecks.size())) {
+        for (const auto &entry : gDecks[size_t(gActiveDeckIndex)].custom)
+            if (!alreadyActive(entry.id)) gAvailable.push_back(entry);
+    }
+}
+void refreshCounterView() {
+    gView.pageCount = std::max(1, int((gTrackers.size() + 3) / 4));
+    gView.page = std::clamp(gView.page, 0, gView.pageCount - 1);
+    gView.tileCount = 0;
+    for (auto &tile : gView.tiles) tile = MtgTile{};
+    for (int pos = gView.page * 4;
+         pos < int(gTrackers.size()) && pos < (gView.page + 1) * 4; ++pos) {
+        const ActiveCounter &entry = gTrackers[size_t(pos)];
+        MtgTile &tile = gView.tiles[gView.tileCount++];
+        std::snprintf(tile.label, sizeof(tile.label), "%s", entry.label.c_str());
+        tile.value = entry.value;
+        tile.selected = gView.selected == MtgCounter::Dynamic && gActiveTracker == pos;
+        if (entry.id == "commander_deaths") tile.accent = 0;
+        else if (entry.id == "commander_damage") tile.accent = 1;
+        else if (entry.id == "experience" || entry.id == "poison") tile.accent = 2;
+        else if (entry.id == "treasures" || entry.id == "rad") tile.accent = 3;
+        else tile.accent = 4;
+    }
+    refreshAvailable();
+    gView.addPageCount = std::max(1, int((gAvailable.size() + 3) / 4));
+    gView.addPage = std::clamp(gView.addPage, 0, gView.addPageCount - 1);
+    gView.choiceCount = 0;
+    for (auto &choice : gView.choices) choice = MtgMenuChoice{};
+    for (int pos = gView.addPage * 4;
+         pos < int(gAvailable.size()) && pos < (gView.addPage + 1) * 4; ++pos) {
+        std::snprintf(gView.choices[gView.choiceCount++].label,
+                      sizeof(gView.choices[0].label), "%s",
+                      gAvailable[size_t(pos)].label.c_str());
+    }
+}
+void rebuildDefaults() {
+    gTrackers.clear();
+    if (gActiveDeckIndex < 0 || gActiveDeckIndex >= int(gDecks.size())) return;
+    for (const auto &definition : gDecks[size_t(gActiveDeckIndex)].defaults) {
+        if (gTrackers.size() >= kMaxActiveCounters) break;
+        if (!isPermanent(definition.id) && !alreadyActive(definition.id))
+            gTrackers.push_back({definition.id, definition.label,
+                                 legacyValue(definition.id), false});
+    }
+}
+
 void writeState() {
     if (gDecks.empty() || gActiveDeckIndex < 0 ||
         gActiveDeckIndex >= int(gDecks.size())) return;
