@@ -39,6 +39,7 @@ constexpr int kClk = 13, kCs = 14, kD0 = 15, kD1 = 16, kD2 = 17,
 esp_lcd_panel_io_handle_t gIo = nullptr;
 esp_lcd_panel_handle_t gPanel = nullptr;
 SemaphoreHandle_t gTransferDone = nullptr;
+TaskHandle_t gDisplayTask = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
@@ -762,8 +763,11 @@ void displayTask(void *) {
             }
             drawnGeneration = snapshot.generation;
         }
-        vTaskDelay(pdMS_TO_TICKS(40));
+        // Wake immediately for a changed counter instead of polling every 40 ms.
+        // Updates received during a full-frame DMA transfer remain pending.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
+    gDisplayTask = nullptr;
     vTaskDelete(nullptr);
 }
 
@@ -774,7 +778,7 @@ bool mtg_display_init() {
     // initialization and DMA flushes can block. The USB sync receiver
     // must be serviced independently, even if the screen is broken.
     return xTaskCreate(displayTask, "mtg_lcd", 10240, nullptr,
-                       tskIDLE_PRIORITY + 1, nullptr)
+                       tskIDLE_PRIORITY + 1, &gDisplayTask)
            == pdPASS;
 }
 
@@ -795,6 +799,7 @@ void mtg_display_show(MthStatus state, int storedDecks, int percent,
     }
     ++gPending.generation;
     taskEXIT_CRITICAL(&gStatusLock);
+    if (gDisplayTask) xTaskNotifyGive(gDisplayTask);
 }
 
 
@@ -804,4 +809,5 @@ void mtg_display_showGame(const MtgGameView &view) {
     gPending.game = view;
     ++gPending.generation;
     taskEXIT_CRITICAL(&gStatusLock);
+    if (gDisplayTask) xTaskNotifyGive(gDisplayTask);
 }
