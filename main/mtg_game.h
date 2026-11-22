@@ -4,7 +4,7 @@
 // Life, commander casts and derived next-cast tax are permanently visible.
 // The four tile slots are populated from the deck's selected trackers;
 // horizontal swipes move between groups of four without hiding Life/Casts/Tax.
-enum class MtgScreen : uint8_t { Dashboard, ChooseDeck, ConfirmReset, AddCounter };
+enum class MtgScreen : uint8_t { Dashboard, ChooseDeck, ConfirmReset, EditCounters };
 enum class MtgCounter : uint8_t { Life, Poison, Rad, Damage, Casts, Deaths, Dynamic, CommanderDamage };
 
 struct MtgTile {
@@ -15,6 +15,7 @@ struct MtgTile {
 };
 struct MtgMenuChoice {
     char label[36]{};
+    bool checked = false;
 };
 
 struct MtgGameView {
@@ -38,6 +39,7 @@ struct MtgGameView {
     int damageIndices[3]{};
     int selectedDamage = -1;
     int addPage = 0, addPageCount = 1;
+    int selectedTrackerCount = 0;
     int choiceCount = 0;
     MtgMenuChoice choices[4]{};
 };
