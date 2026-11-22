@@ -202,9 +202,13 @@ void applyOrnateSkin(const MtgGameView &view) {
                 (y >= 228 && y <= 263 && x >= 182 && x <= 329) ? 1 :
                 (y >= 269 && y <= 302 && x >= 54 && x <= 179) ? 2 :
                 (y >= 269 && y <= 302 && x >= 181 && x <= 306) ? 3 : -1;
-            if (slot >= view.tileCount && slot >= 0) continue;
+            // Empty slots receive only the ambient footer gradient sampled
+            // from the central gap, never the blank tile outline or fill.
+            // This avoids brighter rectangular holes when zero counters exist.
             const size_t off = size_t(y) * 360 + x;
-            const uint8_t idx = gSkin[off];
+            const size_t sample = (slot >= view.tileCount && slot >= 0)
+                ? size_t(y) * 360 + 180 : off;
+            const uint8_t idx = gSkin[sample];
             const uint8_t *c = skin_start + 4 * idx;
             if (c[3] > 0) blendInk(x, y, c[0], c[1], c[2], c[3]);
         }
