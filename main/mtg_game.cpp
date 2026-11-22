@@ -54,7 +54,7 @@ struct StoredCounter {
     uint8_t padding[3]{};
 };
 struct StoredCounters {
-    uint32_t magic = 0x4D543244; // MT2D: discard counters accidentally added by prior incorrect touch mapping
+    uint32_t magic = 0x4D543245; // MT2E: exact visible/hidden tracker selections
     uint32_t count = 0;
     StoredCounter items[kMaxActiveCounters]{};
 };
@@ -228,11 +228,21 @@ void writeState() {
                      gView.damage, gView.casts, gView.deaths};
     esp_err_t err = nvs_set_blob(handle, key, &save, sizeof(save));
     StoredCounters extras;
-    extras.count = uint32_t(std::min(gTrackers.size(), kMaxActiveCounters));
-    for (size_t i = 0; i < extras.count; ++i) {
-        extras.items[i].idHash = crcId(gTrackers[i].id);
-        extras.items[i].value = gTrackers[i].value;
-        extras.items[i].temporary = gTrackers[i].temporary ? 1 : 0;
+    // Write the exact dashboard selection, including hidden trackers' values.
+    // temporary bit 0 = game-added; bit 1 = currently hidden.
+    for (const auto &counter : gTrackers) {
+        if (extras.count >= kMaxActiveCounters) break;
+        StoredCounter &entry = extras.items[extras.count++];
+        entry.idHash = crcId(counter.id);
+        entry.value = counter.value;
+        entry.temporary = counter.temporary ? 1 : 0;
+    }
+    for (const auto &counter : gHiddenTrackers) {
+        if (extras.count >= kMaxActiveCounters) break;
+        StoredCounter &entry = extras.items[extras.count++];
+        entry.idHash = crcId(counter.id);
+        entry.value = counter.value;
+        entry.temporary = uint8_t((counter.temporary ? 1 : 0) | 2);
     }
     key[0] = 't';
     if (err == ESP_OK)
@@ -268,7 +278,7 @@ void loadState(const std::string &id) {
         key[0] = 't';
         length = sizeof(extras);
         hasExtras = nvs_get_blob(handle, key, &extras, &length) == ESP_OK &&
-                    length == sizeof(extras) && extras.magic == 0x4D543244 &&
+                    length == sizeof(extras) && (extras.magic == 0x4D543245 || extras.magic == 0x4D543244) &&
                     extras.count <= kMaxActiveCounters;
         key[0] = 'p';
         length = sizeof(opponents);
@@ -285,7 +295,31 @@ void loadState(const std::string &id) {
     gOpponentPage = 0;
     gOpponentSelected = -1;
     rebuildDefaults();
-    if (hasExtras) {
+    if (hasExtras && extras.magic == 0x4D543245) {
+        // New format stores the actual checked/unchecked state. Never
+        // resurrect an unchecked Windows default during a power cycle.
+        gTrackers.clear();
+        gHiddenTrackers.clear();
+        for (size_t i = 0; i < extras.count; ++i) {
+            const StoredCounter &stored = extras.items[i];
+            const CounterDef *known = nullptr;
+            for (const auto &definition : kCatalog)
+                if (crcId(definition.id) == stored.idHash) { known = &definition; break; }
+            if (!known && gActiveDeckIndex >= 0 && gActiveDeckIndex < int(gDecks.size()))
+                for (const auto &definition : gDecks[size_t(gActiveDeckIndex)].custom)
+                    if (crcId(definition.id) == stored.idHash) {
+                        known = &definition;
+                        break;
+                    }
+            if (!known || isPermanent(known->id)) continue;
+            ActiveCounter counter{known->id, known->label, stored.value,
+                                  (stored.temporary & 1u) != 0};
+            setLegacyValue(counter.id, counter.value);
+            if (stored.temporary & 2u) gHiddenTrackers.push_back(counter);
+            else gTrackers.push_back(counter);
+        }
+    } else if (hasExtras) {
+        // Migrate the existing MT2D save without losing counters/values.
         for (size_t i = 0; i < extras.count; ++i) {
             const StoredCounter &stored = extras.items[i];
             bool found = false;
@@ -297,8 +331,7 @@ void loadState(const std::string &id) {
                     break;
                 }
             }
-            if (found || !stored.temporary ||
-                gTrackers.size() >= kMaxActiveCounters) continue;
+            if (found || !stored.temporary || gTrackers.size() >= kMaxActiveCounters) continue;
             for (const auto &definition : kCatalog) {
                 if (!isPermanent(definition.id) &&
                     crcId(definition.id) == stored.idHash &&
