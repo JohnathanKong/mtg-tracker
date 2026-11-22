@@ -192,8 +192,10 @@ void refreshCounterView() {
         gView.damageIndices[n] = idx < gOpponentCount ? idx + 1 : 0;
         gView.damageValues[n] = idx < gOpponentCount ? gOpponentDamage[idx] : 0;
     }
-    refreshAvailable();
     gView.selectedTrackerCount = int(gTrackers.size());
+    // Avoid building a new full editor catalog for every physical dial tick.
+    if (gView.screen != MtgScreen::EditCounters) return;
+    refreshAvailable();
     // A vertical scrolling list with a four-row viewport, not horizontal pages.
     gView.addPageCount = std::max(1, int(gAvailable.size()) - 3);
     gView.addPage = std::clamp(gView.addPage, 0, gView.addPageCount - 1);
