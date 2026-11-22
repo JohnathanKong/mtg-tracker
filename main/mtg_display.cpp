@@ -1,7 +1,7 @@
 // Status-first firmware UI for Waveshare ESP32-S3-Knob-Touch-LCD-1.8.
 // Round 360x360 SH8601 over QSPI, GPIO47 PWM backlight. No LVGL needed
 // for this bring-up: the drawing code uses a small local bitmap font,
-// RGB565 frame buffer, and DMA-friendly 16-row transfers.
+// RGB565 frame buffer, and DMA-friendly 32-row transfers.
 //
 // Panel pins/init values reference Apache-2.0 BlueKnob board configuration.
 // See THIRD_PARTY_NOTICES.md. Screen is optional to the serial receiver.
@@ -34,7 +34,7 @@
 
 namespace {
 constexpr char kTag[] = "mtg_display";
-constexpr int kWidth = 360, kHeight = 360, kRowsPerTransfer = 16;
+constexpr int kWidth = 360, kHeight = 360, kRowsPerTransfer = 32;
 constexpr int kClk = 13, kCs = 14, kD0 = 15, kD1 = 16, kD2 = 17,
               kD3 = 18, kReset = 21, kBacklight = 47;
 
