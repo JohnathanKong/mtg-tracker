@@ -578,7 +578,11 @@ void atlasText(TextRect rect, const char *text, int fontSize,
             for (int gx = 0; gx < g->width; ++gx) {
                 const size_t off = size_t(gy) * size_t(g->width) + size_t(gx);
                 const uint8_t packed = g->bitmap[off >> 1];
-                const int opacity = int((off & 1) ? (packed & 15u) : (packed >> 4)) * 17;
+                const int coverage = int((off & 1) ? (packed & 15u) : (packed >> 4));
+                // Keep solid pixels solid; retain antialiasing only in the
+                // one-pixel edge rather than misting tiny glyphs with grey.
+                const int opacity = coverage <= 1 ? 0 :
+                    std::min(255, (coverage - 1) * 255 / 12);
                 if (opacity) {
                     const int px = x0 + pen + g->xBearing + gx;
                     const int py = baseline + g->yBearing + gy;
@@ -681,22 +685,22 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
     char lower[36]{};
     for (int i = 0; i < 35 && label[i]; ++i)
         lower[i] = char(std::tolower(static_cast<unsigned char>(label[i])));
-    const uint8_t red = selected ? 146 : 114;
-    const uint8_t green = selected ? 235 : 206;
-    const uint8_t blue = selected ? 221 : 208;
+    const uint8_t red = selected ? 214 : 178;
+    const uint8_t green = selected ? 252 : 236;
+    const uint8_t blue = selected ? 241 : 225;
     if (std::strstr(lower, "poison") || std::strstr(lower, "death")) {
-        softDisc(cx,cy-2,5.8f,red,green,blue);
-        softDisc(cx-2,cy-3,1.3f,13,39,44);
-        softDisc(cx+2,cy-3,1.3f,13,39,44);
-        softStroke(cx-3,cy+4,cx+3,cy+4,2,red,green,blue);
-        softStroke(cx-2,cy+4,cx-2,cy+7,1,red,green,blue);
-        softStroke(cx+2,cy+4,cx+2,cy+7,1,red,green,blue);
+        softDisc(cx,cy-2,7.2f,red,green,blue);
+        softDisc(cx-2.5f,cy-3,1.6f,13,39,44);
+        softDisc(cx+2.5f,cy-3,1.6f,13,39,44);
+        softStroke(cx-4,cy+4,cx+4,cy+4,2.2f,red,green,blue);
+        softStroke(cx-2,cy+4,cx-2,cy+7,2.0f,red,green,blue);
+        softStroke(cx+2,cy+4,cx+2,cy+7,2.0f,red,green,blue);
     } else if (std::strstr(lower,"experience") || std::strstr(lower,"storm")) {
         for(int i=0;i<8;++i) {
             const float a = float(i)*.78539816f;
-            const float r = (i&1)?5.0f:8.0f;
+            const float r = (i&1)?5.5f:9.1f;
             softStroke(cx,cy,cx+std::cos(a)*r,cy+std::sin(a)*r,
-                       i&1?1.1f:1.7f,red,green,blue);
+                       i&1?1.7f:2.3f,red,green,blue);
         }
     } else if (std::strstr(lower,"treasure")) {
         softStroke(cx-7,cy-4,cx+7,cy-4,2,red,green,blue);
@@ -708,9 +712,9 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
         softStroke(cx+2,cy-8,cx+2,cy-5,1,red,green,blue);
         softDisc(cx,cy,1.5f,red,green,blue);
     } else if (std::strstr(lower,"energy")) {
-        softStroke(cx+2,cy-8,cx-4,cy,2,red,green,blue);
-        softStroke(cx-4,cy,cx+2,cy,2,red,green,blue);
-        softStroke(cx+2,cy,cx-2,cy+8,2,red,green,blue);
+        softStroke(cx+2,cy-9,cx-5,cy,2.7f,red,green,blue);
+        softStroke(cx-5,cy,cx+2,cy,2.7f,red,green,blue);
+        softStroke(cx+2,cy,cx-2,cy+9,2.7f,red,green,blue);
     } else if (std::strstr(lower,"rad")) {
         softDisc(cx,cy,2.3f,red,green,blue);
         for(int i=0;i<3;++i) {
@@ -749,13 +753,16 @@ void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
               tile.selected ? kTeal : kIvory);
 }
 void drawEditCounterButton() {
-    // Same baseline as the two counters, with a pencil icon instead of text.
-    softCapsule(283, 259, 33, 25, 12, 214, 180, 111);
-    softStroke(295,274,306,264,2.2f,245,211,147);
-    softStroke(293,278,295,274,1.8f,245,211,147);
-    softStroke(293,278,297,277,1.8f,245,211,147);
-    softStroke(291,266,291,278,1.1f,190,153,93);
-    softStroke(291,278,302,278,1.1f,190,153,93);
+    // Pencil-in-a-square glyph, not a diagonal arrow. Fits on the same row.
+    softCapsule(282, 259, 33, 25, 12, 236, 193, 100);
+    softStroke(289,267,289,278,1.5f,232,194,118);
+    softStroke(289,278,302,278,1.5f,232,194,118);
+    softStroke(302,278,302,273,1.5f,232,194,118);
+    softStroke(294,272,303,263,2.1f,254,228,162);
+    softStroke(297,275,306,266,2.1f,254,228,162);
+    softStroke(303,263,306,266,2.1f,254,228,162);
+    softStroke(294,272,293,278,1.9f,254,228,162);
+    softStroke(293,278,297,275,1.9f,254,228,162);
 }
 
 
