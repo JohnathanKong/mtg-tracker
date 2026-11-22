@@ -650,40 +650,124 @@ void drawCheckBox(int x, int y, bool checked) {
         }
     }
 }
-void drawSmallCounter(int x, int y, const MtgTile &tile) {
-    softCapsule(x, y, 106, 25, 12,
-                tile.selected ? 114 : 190,
-                tile.selected ? 230 : 152,
-                tile.selected ? 209 : 91, tile.selected);
-    char label[36];
-    std::snprintf(label, sizeof(label), "%s", tile.label);
-    if (std::strncmp(label, "Commander ", 10) == 0) {
-        std::snprintf(label, sizeof(label), "%s", tile.label + 10);
+enum class BottomAnimation : uint8_t { None, Slide, Pulse };
+BottomAnimation gBottomAnimation = BottomAnimation::None;
+int64_t gAnimationStartedUs = 0;
+int gAnimatedTile = -1;
+int gSlideDirection = 1;
+float gAnimationProgress = 1.0f;
+
+// Antialiased icon strokes at native resolution (only ~20px per icon).
+// No text labels are rendered on the bottom dashboard row.
+void softStroke(float ax, float ay, float bx, float by, float thickness,
+                uint8_t r, uint8_t g, uint8_t b) {
+    const float dx = bx - ax, dy = by - ay;
+    const float length2 = dx * dx + dy * dy;
+    const int left = std::max(0, int(std::floor(std::min(ax, bx) - thickness - 2)));
+    const int right = std::min(359, int(std::ceil(std::max(ax, bx) + thickness + 2)));
+    const int top = std::max(0, int(std::floor(std::min(ay, by) - thickness - 2)));
+    const int bottom = std::min(359, int(std::ceil(std::max(ay, by) + thickness + 2)));
+    for (int y = top; y <= bottom; ++y) for (int x = left; x <= right; ++x) {
+        const float t = length2 > 0.001f ?
+            std::clamp(((x + .5f - ax) * dx + (y + .5f - ay) * dy) / length2,
+                       0.0f, 1.0f) : 0.0f;
+        const float px = ax + t * dx, py = ay + t * dy;
+        const float dist = std::sqrt((x + .5f - px) * (x + .5f - px) +
+                                     (y + .5f - py) * (y + .5f - py));
+        const float alpha = std::clamp(thickness * .5f + .7f - dist, 0.0f, 1.0f);
+        if (alpha > 0) blendInk(x, y, r, g, b, int(alpha * 240));
     }
-    // Keep long labels legible inside a small pill. Show the complete
-    // caption across two small lines when the name contains a word break.
-    int separator = -1;
-    const int len = int(std::strlen(label));
-    if (len > 11) for (int i = 1; i < len; ++i)
-        if (label[i] == ' ' && i <= 10 && len - i - 1 <= 10) {
-            separator = i;
-            break;
+}
+void softDisc(float cx, float cy, float radius,
+              uint8_t r, uint8_t g, uint8_t b, bool hollow = false) {
+    for (int y = std::max(0,int(cy-radius-2)); y <= std::min(359,int(cy+radius+2)); ++y)
+        for (int x = std::max(0,int(cx-radius-2)); x <= std::min(359,int(cx+radius+2)); ++x) {
+            const float dist = std::sqrt((x+.5f-cx)*(x+.5f-cx) +
+                                         (y+.5f-cy)*(y+.5f-cy));
+            const float delta = hollow ? std::fabs(dist-radius) : dist-radius;
+            const float alpha = std::clamp(.9f-delta,0.0f,1.0f);
+            if(alpha>0) blendInk(x,y,r,g,b,int(alpha*235));
         }
-    if (separator >= 0) {
-        label[separator] = '\0';
-        atlasText({x + 5, y + 1, 69, 12}, label, 0, kIvory);
-        atlasText({x + 5, y + 12, 69, 11}, label + separator + 1, 0, kIvory);
+}
+void bottomIcon(int cx, int cy, const char *label, bool selected) {
+    char lower[36]{};
+    for (int i = 0; i < 35 && label[i]; ++i)
+        lower[i] = char(std::tolower(static_cast<unsigned char>(label[i])));
+    const uint8_t red = selected ? 146 : 114;
+    const uint8_t green = selected ? 235 : 206;
+    const uint8_t blue = selected ? 221 : 208;
+    if (std::strstr(lower, "poison") || std::strstr(lower, "death")) {
+        softDisc(cx,cy-2,5.8f,red,green,blue);
+        softDisc(cx-2,cy-3,1.3f,13,39,44);
+        softDisc(cx+2,cy-3,1.3f,13,39,44);
+        softStroke(cx-3,cy+4,cx+3,cy+4,2,red,green,blue);
+        softStroke(cx-2,cy+4,cx-2,cy+7,1,red,green,blue);
+        softStroke(cx+2,cy+4,cx+2,cy+7,1,red,green,blue);
+    } else if (std::strstr(lower,"experience") || std::strstr(lower,"storm")) {
+        for(int i=0;i<8;++i) {
+            const float a = float(i)*.78539816f;
+            const float r = (i&1)?5.0f:8.0f;
+            softStroke(cx,cy,cx+std::cos(a)*r,cy+std::sin(a)*r,
+                       i&1?1.1f:1.7f,red,green,blue);
+        }
+    } else if (std::strstr(lower,"treasure")) {
+        softStroke(cx-7,cy-4,cx+7,cy-4,2,red,green,blue);
+        softStroke(cx-7,cy-4,cx-7,cy+6,2,red,green,blue);
+        softStroke(cx+7,cy-4,cx+7,cy+6,2,red,green,blue);
+        softStroke(cx-7,cy+6,cx+7,cy+6,2,red,green,blue);
+        softStroke(cx-2,cy-8,cx+2,cy-8,2,red,green,blue);
+        softStroke(cx-2,cy-8,cx-2,cy-5,1,red,green,blue);
+        softStroke(cx+2,cy-8,cx+2,cy-5,1,red,green,blue);
+        softDisc(cx,cy,1.5f,red,green,blue);
+    } else if (std::strstr(lower,"energy")) {
+        softStroke(cx+2,cy-8,cx-4,cy,2,red,green,blue);
+        softStroke(cx-4,cy,cx+2,cy,2,red,green,blue);
+        softStroke(cx+2,cy,cx-2,cy+8,2,red,green,blue);
+    } else if (std::strstr(lower,"rad")) {
+        softDisc(cx,cy,2.3f,red,green,blue);
+        for(int i=0;i<3;++i) {
+            float a = float(i)*2.0943951f;
+            softDisc(cx+std::cos(a)*6.5f,cy+std::sin(a)*6.5f,2.5f,red,green,blue);
+        }
     } else {
-        atlasText({x + 5, y + 4, 70, 16}, label, 0, kIvory);
+        // Neutral rune for user-defined counters without a known icon.
+        softStroke(cx,cy-8,cx+7,cy,1.6f,red,green,blue);
+        softStroke(cx+7,cy,cx,cy+8,1.6f,red,green,blue);
+        softStroke(cx,cy+8,cx-7,cy,1.6f,red,green,blue);
+        softStroke(cx-7,cy,cx,cy-8,1.6f,red,green,blue);
     }
+}
+void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
+    const float p = std::clamp(gAnimationProgress, 0.0f, 1.0f);
+    // A 10px ease-out slide when the user swipes to a different pair.
+    const int dx = gBottomAnimation == BottomAnimation::Slide ?
+        int(float(gSlideDirection) * 10.0f * (1.0f-p) * (1.0f-p)) : 0;
+    // A short gold/teal highlight on selection or value changes.
+    const int glow = gBottomAnimation == BottomAnimation::Pulse &&
+                     gAnimatedTile == index ? int(68.0f * (1.0f-p)) : 0;
+    x += dx;
+    softCapsule(x, y, 106, 25, 12,
+                uint8_t(std::min(255, (tile.selected ? 114 : 190) + glow)),
+                uint8_t(std::min(255, (tile.selected ? 230 : 152) + glow)),
+                uint8_t(std::min(255, (tile.selected ? 209 : 91) + glow)),
+                tile.selected);
+    bottomIcon(x + 20, y + 12, tile.label, tile.selected);
+    // Divider and large clean numeric value; never draw a text label here.
+    softStroke(float(x+39),float(y+5),float(x+39),float(y+20),
+               1.0f,157,163,142);
     char value[20];
     std::snprintf(value, sizeof(value), "%d", tile.value);
-    atlasText({x + 78, y + 3, 26, 20}, value, 1,
+    atlasText({x + 43, y + 2, 60, 21}, value, 1,
               tile.selected ? kTeal : kIvory);
 }
 void drawEditCounterButton() {
+    // Same baseline as the two counters, with a pencil icon instead of text.
     softCapsule(283, 259, 33, 25, 12, 214, 180, 111);
-    atlasText({285, 264, 29, 16}, "EDIT", 0, kGold);
+    softStroke(295,274,306,264,2.2f,245,211,147);
+    softStroke(293,278,295,274,1.8f,245,211,147);
+    softStroke(293,278,297,277,1.8f,245,211,147);
+    softStroke(291,266,291,278,1.1f,190,153,93);
+    softStroke(291,278,302,278,1.1f,190,153,93);
 }
 
 void drawDashboard(const MtgGameView &view) {
@@ -799,8 +883,8 @@ void drawDashboard(const MtgGameView &view) {
     // two compact counters plus the dedicated EDIT button.
     // With no optional trackers, leave this row visually empty except EDIT.
     if (view.tileCount > 0) softCapsule(42, 250, 277, 41, 19, 136, 109, 67);
-    if (view.tileCount > 0) drawSmallCounter(50, 259, view.tiles[0]);
-    if (view.tileCount > 1) drawSmallCounter(165, 259, view.tiles[1]);
+    if (view.tileCount > 0) drawSmallCounter(50, 259, view.tiles[0], 0);
+    if (view.tileCount > 1) drawSmallCounter(165, 259, view.tiles[1], 1);
     drawEditCounterButton();
 
     // Only counter pages move on a horizontal swipe. Life, Casts, Tax and
