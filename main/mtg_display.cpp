@@ -160,7 +160,11 @@ void loadArtFor(const MtgGameView &view) {
     std::snprintf(path, sizeof(path), "/mtg/a%08lX.rgb",
                   static_cast<unsigned long>(crcDeckId(view.deckId)));
     FILE *file = std::fopen(path, "rb");
-    if (!file) return;
+    if (!file) {
+        ESP_LOGW(kTag, "Commander artwork missing for deck '%s': %s (sync art from desktop)",
+                 view.deckName, path);
+        return;
+    }
     const size_t len = std::fread(gArt, sizeof(uint16_t), 360 * 360, file);
     const int trailing = std::fgetc(file);
     std::fclose(file);
@@ -440,6 +444,13 @@ void drawDashboard(const MtgGameView &view) {
         return;
     }
 
+    if (!gHasArt) {
+        // Explicitly distinguish missing per-deck artwork from the decorative
+        // blank HUD. Firmware flashing alone cannot transfer desktop images.
+        textInPanel({32, 124, 120, 18}, "SYNC ART",
+                    FreeSans9pt7b, kMuted);
+    }
+
     const uint16_t accent = color(115, 223, 255);
     const uint16_t white = color(250, 247, 243);
     const uint16_t label = color(239, 237, 230);
@@ -467,27 +478,30 @@ void drawDashboard(const MtgGameView &view) {
     };
     for (const StatRow &row : rows) {
         const uint16_t ink = view.selected == row.counter ? accent : white;
-        textInPanel({204, row.top + 3, 79, 24},
+        // Label and number have their own inset regions. In particular, the
+        // top right capsule sits close to the ROUND screen boundary: x=320
+        // was physically cut off there, even though it fit a square preview.
+        textInPanel({199, row.top + 3, 78, 24},
                     row.name, FreeSans9pt7b, label);
         std::snprintf(number, sizeof(number), "%d", row.value);
-        textInPanel({285, row.top + 1, 35, 27},
+        textInPanel({270, row.top + 7, 28, 25},
                     number, FreeSans18pt7b, ink);
     }
 
     // Keep the exact approved lower-bar treatment: stacked-card icon for
     // CASTS and gold triple-chevron icon for TAX are baked into the art.
     // Casts is editable; next-cast tax = 2 * the number of previous casts.
-    textInPanel({104, 238, 161, 22}, "COMMANDER",
+    textInPanel({104, 239, 161, 19}, "COMMANDER",
                 FreeSans9pt7b, white);
-    textInPanel({111, 267, 68, 17}, "CASTS",
+    textInPanel({112, 265, 66, 17}, "CASTS",
                 FreeSans9pt7b, label);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    textInPanel({114, 285, 64, 28}, number, FreeSans18pt7b,
+    textInPanel({111, 285, 67, 27}, number, FreeSans18pt7b,
                 view.selected == MtgCounter::Casts ? accent : white);
 
-    textInPanel({236, 267, 70, 17}, "TAX", FreeSans9pt7b, label);
+    textInPanel({237, 265, 57, 17}, "TAX", FreeSans9pt7b, label);
     std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    textInPanel({237, 285, 68, 28}, number, FreeSans18pt7b, white);
+    textInPanel({230, 285, 62, 27}, number, FreeSans18pt7b, white);
 }
 
 void drawShell() {
