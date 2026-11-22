@@ -87,9 +87,9 @@ constexpr uint16_t kTrack    = color(53, 69, 81);
 
 inline void pixel(int x, int y, uint16_t ink);
 
-// Asset: 360x360 antialiased RGBA palette, 4-bit packed pixels and LZ4 block.
+// Asset: 360x360 antialiased 32-color RGBA palette and LZ4 pixels.
 // Chrome and decoration contain no baked-in commander art or changing values.
-constexpr size_t kPaletteByteSize = 16 * 4;
+constexpr size_t kPaletteByteSize = 32 * 4;
 
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
@@ -100,7 +100,7 @@ bool decodeSkin() {
     const uint8_t *src = skin_start + kPaletteByteSize;
     const uint8_t *const end = skin_end;
     uint8_t *out = gSkin;
-    uint8_t *const outEnd = gSkin + 360 * 360 / 2;
+    uint8_t *const outEnd = gSkin + 360 * 360;
     while (src < end) {
         const uint8_t token = *src++;
         size_t literal = token >> 4;
@@ -176,7 +176,7 @@ void loadArtFor(const MtgGameView &view) {
 
 // The artwork and all numbers remain live. This indexed decorative layer
 // contains ONLY antialiased gold curves, ornamental crests and blank counter
-// capsules. The palette is RGBA; index zero is fully transparent.
+// capsules. The 32-entry palette is RGBA; index zero is fully transparent.
 void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha) {
     if (x < 0 || y < 0 || x >= kWidth || y >= kHeight || alpha <= 0) return;
     if (alpha >= 255) {
@@ -204,8 +204,7 @@ void applyOrnateSkin(const MtgGameView &view) {
                 (y >= 269 && y <= 302 && x >= 181 && x <= 306) ? 3 : -1;
             if (slot >= view.tileCount && slot >= 0) continue;
             const size_t off = size_t(y) * 360 + x;
-            const uint8_t packed = gSkin[off / 2];
-            const uint8_t idx = (off & 1) ? (packed & 0x0Fu) : (packed >> 4);
+            const uint8_t idx = gSkin[off];
             const uint8_t *c = skin_start + 4 * idx;
             if (c[3] > 0) blendInk(x, y, c[0], c[1], c[2], c[3]);
         }
@@ -785,7 +784,7 @@ bool initDisplayHardware() {
     gArt = static_cast<uint16_t *>(heap_caps_malloc(
         360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gSkin = static_cast<uint8_t *>(heap_caps_malloc(
-        360 * 360 / 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        360 * 360, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (gSkin && !decodeSkin()) {
         ESP_LOGE(kTag, "Bundled antialiased ornate chrome asset invalid");
         heap_caps_free(gSkin);
