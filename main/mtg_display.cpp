@@ -44,11 +44,14 @@ uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
 uint8_t *gSkin = nullptr;      // 4-bit packed 360x360 antialiased ornate chrome overlay
+uint8_t *gFontRaw = nullptr;    // unpacked 4-bit AA glyph atlas, PSRAM
 char gLoadedArtId[96] = {};
 uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
 extern "C" const uint8_t skin_start[] asm("_binary_ui_reference_chrome_360_lz4_start");
 extern "C" const uint8_t skin_end[] asm("_binary_ui_reference_chrome_360_lz4_end");
+extern "C" const uint8_t font_start[] asm("_binary_ui_font_atlas_lz4_start");
+extern "C" const uint8_t font_end[] asm("_binary_ui_font_atlas_lz4_end");
 
 
 // All USB callbacks update only this small pending status, never the LCD
@@ -89,41 +92,42 @@ inline void pixel(int x, int y, uint16_t ink);
 
 // Asset: 360x360 antialiased 32-color RGBA palette and LZ4 pixels.
 // Chrome and decoration contain no baked-in commander art or changing values.
-constexpr size_t kPaletteByteSize = 64 * 4;
+constexpr size_t kPaletteByteSize = 32 * 4;
 
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
 // The generated skin is native 360x360 indexed pixels without lossy upscaling.
-bool decodeSkin() {
-    if (!gSkin) return false;
-    if (size_t(skin_end - skin_start) < kPaletteByteSize + 2) return false;
-    const uint8_t *src = skin_start + kPaletteByteSize;
-    const uint8_t *const end = skin_end;
-    uint8_t *out = gSkin;
-    uint8_t *const outEnd = gSkin + 360 * 360;
+// Strict LZ4 block decoder. The chrome and antialiased fonts have separate,
+// checked buffers so corrupt assets can never overrun our pixel framebuffer.
+bool decodeLz4(const uint8_t *src, const uint8_t *end,
+               uint8_t *out, size_t outLen) {
+    if (!src || !end || !out || src > end) return false;
+    uint8_t *const base = out;
+    uint8_t *const outEnd = out + outLen;
     while (src < end) {
         const uint8_t token = *src++;
         size_t literal = token >> 4;
         if (literal == 15) {
-            uint8_t extra = 0;
+            uint8_t extra;
             do {
                 if (src == end) return false;
                 extra = *src++;
                 literal += extra;
             } while (extra == 255);
         }
-        if (size_t(end - src) < literal ||
-            size_t(outEnd - out) < literal) return false;
+        if (size_t(end - src) < literal || size_t(outEnd - out) < literal)
+            return false;
         std::memcpy(out, src, literal);
-        out += literal; src += literal;
+        out += literal;
+        src += literal;
         if (src == end) break;
         if (end - src < 2) return false;
         const size_t distance = size_t(src[0]) | (size_t(src[1]) << 8);
         src += 2;
-        if (distance == 0 || size_t(out - gSkin) < distance) return false;
-        size_t match = token & 0x0F;
+        if (distance == 0 || size_t(out - base) < distance) return false;
+        size_t match = token & 15u;
         if (match == 15) {
-            uint8_t extra = 0;
+            uint8_t extra;
             do {
                 if (src == end) return false;
                 extra = *src++;
@@ -137,6 +141,62 @@ bool decodeSkin() {
         out += match;
     }
     return out == outEnd;
+}
+
+bool decodeSkin() {
+    return gSkin && size_t(skin_end - skin_start) > kPaletteByteSize &&
+           decodeLz4(skin_start + kPaletteByteSize, skin_end, gSkin, 360u * 360u);
+}
+
+// Noto Serif Display glyphs were rasterized with FreeType at 4x resolution,
+// Lanczos-downsampled and stored as 4-bit alpha. Unlike the old GFX fonts,
+// these stay smooth at 360px and need no on-device TrueType renderer.
+struct AaGlyph {
+    unsigned char character = 0, width = 0, height = 0;
+    int8_t xBearing = 0, yBearing = 0;
+    unsigned char advance = 0;
+    const uint8_t *bitmap = nullptr;
+};
+struct AaFace {
+    unsigned char nominalSize = 0, count = 0;
+    AaGlyph glyph[48]{};
+};
+AaFace gAaFaces[3];
+bool initAaFonts() {
+    if (size_t(font_end - font_start) < 8) return false;
+    const size_t length = size_t(font_start[0]) | (size_t(font_start[1]) << 8) |
+                          (size_t(font_start[2]) << 16) | (size_t(font_start[3]) << 24);
+    if (length < 20 || length > 65536) return false;
+    gFontRaw = static_cast<uint8_t *>(heap_caps_malloc(
+        length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!gFontRaw || !decodeLz4(font_start + 4, font_end, gFontRaw, length))
+        return false;
+    const uint8_t *cursor = gFontRaw;
+    const uint8_t *const end = gFontRaw + length;
+    if (end - cursor < 5 || std::memcmp(cursor, "MFA1", 4) != 0) return false;
+    cursor += 4;
+    if (*cursor++ != 3) return false;
+    for (AaFace &face : gAaFaces) {
+        if (end - cursor < 2) return false;
+        face.nominalSize = *cursor++;
+        face.count = *cursor++;
+        if (face.count > 48) return false;
+        for (unsigned n = 0; n < face.count; ++n) {
+            if (end - cursor < 6) return false;
+            AaGlyph &glyph = face.glyph[n];
+            glyph.character = *cursor++;
+            glyph.width = *cursor++;
+            glyph.height = *cursor++;
+            glyph.xBearing = static_cast<int8_t>(*cursor++);
+            glyph.yBearing = static_cast<int8_t>(*cursor++);
+            glyph.advance = *cursor++;
+            const size_t size = (size_t(glyph.width) * glyph.height + 1) / 2;
+            if (size_t(end - cursor) < size) return false;
+            glyph.bitmap = cursor;
+            cursor += size;
+        }
+    }
+    return cursor == end;
 }
 
 uint32_t crcDeckId(const char *s) {
@@ -209,7 +269,7 @@ void applyOrnateSkin(const MtgGameView &view) {
             if (player >= 0 && !view.damageIndices[player]) continue;
             const size_t off = size_t(y) * 360u + size_t(x);
             const uint8_t idx = gSkin[off];
-            if (idx >= 64) continue;
+            if (idx >= 32) continue;
             const uint8_t *rgba = skin_start + idx * 4u;
             if (rgba[3]) blendInk(x, y, rgba[0], rgba[1], rgba[2], rgba[3]);
         }
@@ -790,6 +850,8 @@ bool initDisplayHardware() {
         360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gSkin = static_cast<uint8_t *>(heap_caps_malloc(
         360 * 360, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!initAaFonts())
+        ESP_LOGW(kTag, "Antialiased serif font atlas unavailable; using GFX fallback");
     if (gSkin && !decodeSkin()) {
         ESP_LOGE(kTag, "Bundled antialiased ornate chrome asset invalid");
         heap_caps_free(gSkin);
