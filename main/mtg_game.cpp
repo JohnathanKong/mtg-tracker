@@ -158,8 +158,9 @@ void refreshAvailable() {
     if (gActiveDeckIndex >= 0 && gActiveDeckIndex < int(gDecks.size()))
         for (const auto &entry : gDecks[size_t(gActiveDeckIndex)].custom)
             append(entry.id, entry.label);
-    // Preserve any older synced custom trackers no longer in the catalog.
+    // Preserve older synced custom trackers, even after unchecking them.
     for (const auto &active : gTrackers) append(active.id, active.label);
+    for (const auto &hidden : gHiddenTrackers) append(hidden.id, hidden.label);
 }
 
 void refreshCounterView() {
@@ -679,7 +680,9 @@ void tap(int x, int y) {
                     } else if (gActiveTracker > active) {
                         --gActiveTracker;
                     }
-                } else if (gTrackers.size() < kMaxActiveCounters) {
+                } else if (gTrackers.size() + gHiddenTrackers.size() < kMaxActiveCounters ||
+                           std::any_of(gHiddenTrackers.begin(),gHiddenTrackers.end(),
+                               [&](const ActiveCounter &entry){return entry.id == item.id;})) {
                     ActiveCounter entry{item.id, item.label, legacyValue(item.id), true};
                     for (auto it = gHiddenTrackers.begin(); it != gHiddenTrackers.end(); ++it) {
                         if (it->id == item.id) {
