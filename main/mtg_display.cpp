@@ -797,7 +797,8 @@ void drawDashboard(const MtgGameView &view) {
     }
     // A soft glass tray covers the old thumbnail geometry and carries the
     // two compact counters plus the dedicated EDIT button.
-    softCapsule(42, 250, 277, 41, 19, 136, 109, 67);
+    // With no optional trackers, leave this row visually empty except EDIT.
+    if (view.tileCount > 0) softCapsule(42, 250, 277, 41, 19, 136, 109, 67);
     if (view.tileCount > 0) drawSmallCounter(50, 259, view.tiles[0]);
     if (view.tileCount > 1) drawSmallCounter(165, 259, view.tiles[1]);
     drawEditCounterButton();
