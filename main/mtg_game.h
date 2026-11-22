@@ -5,7 +5,7 @@
 // The four tile slots are populated from the deck's selected trackers;
 // horizontal swipes move between groups of four without hiding Life/Casts/Tax.
 enum class MtgScreen : uint8_t { Dashboard, ChooseDeck, ConfirmReset, AddCounter };
-enum class MtgCounter : uint8_t { Life, Poison, Rad, Damage, Casts, Deaths, Dynamic };
+enum class MtgCounter : uint8_t { Life, Poison, Rad, Damage, Casts, Deaths, Dynamic, CommanderDamage };
 
 struct MtgTile {
     char label[36]{};
@@ -31,6 +31,12 @@ struct MtgGameView {
     int page = 0, pageCount = 1;
     int tileCount = 0;
     MtgTile tiles[4]{};
+    int damagePlayers = 3;
+    int damagePage = 0;
+    int damagePageCount = 1;
+    int damageValues[3]{};
+    int damageIndices[3]{};
+    int selectedDamage = -1;
     int addPage = 0, addPageCount = 1;
     int choiceCount = 0;
     MtgMenuChoice choices[4]{};
