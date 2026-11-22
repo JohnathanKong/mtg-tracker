@@ -812,7 +812,7 @@ void task(void *) {
     int64_t editLastDrawUs = 0;
     float editFingerVelocity = 0.0f; // Positive is scroll down the list
     float editMomentumVelocity = 0.0f;
-    float editMomentumFraction = 0.0f;
+    float editMomentumPosition = 0.0f;
     int64_t editMomentumLastUs = 0;
     while (true) {
         if (gReloadPending.exchange(false)) {
@@ -831,7 +831,7 @@ void task(void *) {
             draggingCounterPages = false;
             draggingEdit = false;
             editMomentumVelocity = 0.0f;
-            editMomentumFraction = 0.0f;
+            editMomentumPosition = float(gView.editScrollPx);
             editStartScroll = gView.editScrollPx;
             editPrevY = y;
             editPrevUs = touchStarted;
@@ -945,6 +945,7 @@ void task(void *) {
                     if (std::abs(editMomentumVelocity) < 90.0f)
                         editMomentumVelocity = 0.0f;
                     editMomentumLastUs = now;
+                    editMomentumPosition = float(gView.editScrollPx);
                     draggingEdit = false;
                 } else if (std::abs(dx) < 18 && std::abs(dy) < 18) {
                     tap(touchX,touchY);
@@ -966,21 +967,22 @@ void task(void *) {
             const float dt = std::clamp(float(now - editMomentumLastUs) *
                                         0.000001f, 0.0f, 0.05f);
             editMomentumLastUs = now;
-            editMomentumFraction += editMomentumVelocity * dt;
-            const int whole = int(editMomentumFraction);
-            editMomentumFraction -= float(whole);
-            if (whole != 0) {
-                const int next = mtg_scroll::clampScroll(
-                    gView.editScrollPx + whole, int(gAvailable.size()));
-                if (next != gView.editScrollPx &&
-                    now - editLastDrawUs >= 27000) {
-                    gView.editScrollPx = next;
-                    editLastDrawUs = now;
-                    publish();
-                }
-                if (next == 0 || next == mtg_scroll::maxScroll(int(gAvailable.size())))
-                    editMomentumVelocity = 0.0f;
+            const int limit = mtg_scroll::maxScroll(int(gAvailable.size()));
+            editMomentumPosition = std::clamp(
+                editMomentumPosition + editMomentumVelocity * dt,
+                0.0f, float(limit));
+            const int next = int(editMomentumPosition + 0.5f);
+            // Accumulate every physics step, even while coalescing LCD
+            // frames. Never discard movement because a frame was throttled.
+            if (next != gView.editScrollPx &&
+                now - editLastDrawUs >= 27000) {
+                gView.editScrollPx = next;
+                editLastDrawUs = now;
+                publish();
             }
+            if (editMomentumPosition <= 0.0f ||
+                editMomentumPosition >= float(limit))
+                editMomentumVelocity = 0.0f;
             // Exponential friction, independent of the game task tick rate.
             editMomentumVelocity *= std::exp(-6.0f * dt);
             if (std::abs(editMomentumVelocity) < 30.0f)
