@@ -296,36 +296,6 @@ void printCentered(int y, const char *value, int scale, uint16_t ink) {
     printAt(180, y, value, scale, ink);
 }
 
-// Proportional, real raster font assets, not scaled-up 5x7 placeholders.
-// Font metrics and bitmap data are from the Adafruit GFX FreeFont set.
-void fancyText(const GFXfont &font, int centerX, int baseline,
-               const char *text, int magnification, uint16_t ink) {
-    int span = 0;
-    for (const unsigned char *c = reinterpret_cast<const unsigned char *>(text);
-         *c; ++c) {
-        if (*c >= font.first && *c <= font.last)
-            span += font.glyph[*c - font.first].xAdvance * magnification;
-    }
-    int cursor = centerX - span / 2;
-    for (const unsigned char *c = reinterpret_cast<const unsigned char *>(text);
-         *c; ++c) {
-        if (*c < font.first || *c > font.last) continue;
-        const GFXglyph &glyph = font.glyph[*c - font.first];
-        const int w = glyph.width, h = glyph.height;
-        const uint8_t *bits = font.bitmap + glyph.bitmapOffset;
-        int bitIndex = 0;
-        for (int y = 0; y < h; ++y) {
-            for (int x = 0; x < w; ++x, ++bitIndex) {
-                if (!(bits[bitIndex >> 3] & (0x80 >> (bitIndex & 7)))) continue;
-                fillRect(cursor + (glyph.xOffset + x) * magnification,
-                         baseline + (glyph.yOffset + y) * magnification,
-                         magnification, magnification, ink);
-            }
-        }
-        cursor += glyph.xAdvance * magnification;
-    }
-}
-
 // All text is measured by the actual GFX glyph bounds, then centered in
 // the on-screen panel's safe rectangle. This avoids the previous overlapping
 // "baseline by eye" layout. Static icons/borders live in ui_portrait_hud_360.
@@ -637,7 +607,6 @@ bool initBacklight() {
     channel.gpio_num = kBacklight;
     channel.speed_mode = LEDC_LOW_SPEED_MODE;
     channel.channel = LEDC_CHANNEL_0;
-    channel.intr_type = LEDC_INTR_DISABLE;
     channel.timer_sel = LEDC_TIMER_0;
     channel.duty = 0;
     channel.hpoint = 0;
