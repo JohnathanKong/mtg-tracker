@@ -272,12 +272,18 @@ void applyOrnateSkin(const MtgGameView &/*view*/) {
     if (!gSkin) return;
     for (int y = 0; y < 360; ++y) {
         for (int x = 0; x < 360; ++x) {
-            // The exported mockup had incomplete/masked-out borders around
-            // Life, players, and the circle. Retain only its unobstructed
-            // ornamentation above the HUD; the entire interactive interface
-            // is now drawn with native complete shapes.
+            // Preserve the original painted filigree and glowing flourishes.
+            // Mask only the defective screenshot-extracted Life / player / tile
+            // outlines, so their complete dynamic shapes can be drawn on top.
+            // This restores visual depth without resurrecting broken borders.
             const int dx = x-180, dy = y-180;
-            if (y >= 96 || dx*dx + dy*dy >= 165*165) continue;
+            const bool topOrnament = y < 96;
+            const bool shoulderOrnament = y >= 96 && y < 197 &&
+                                          (x < 89 || x > 271);
+            const bool footerOrnament = y >= 315 && y <= 341 &&
+                                        x >= 63 && x <= 297;
+            if ((!topOrnament && !shoulderOrnament && !footerOrnament) ||
+                dx*dx + dy*dy >= 165*165) continue;
             const size_t off = size_t(y) * 360u + size_t(x);
             const uint8_t index = gSkin[off * 2u];
             const uint8_t alpha = gSkin[off * 2u + 1u];
