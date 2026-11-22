@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test MTG1 transfer reference
         run: python3 -m unittest discover -s tests -p "test_*.py" -v
+      - name: Validate artwork transfer header on native C++ compiler
+        run: g++ -std=c++17 -Wall -Wextra -Werror -I main tests/test_art_header.cpp -o /tmp/test_art_header && /tmp/test_art_header
       - name: Build using Espressif's ESP-IDF v6.1 container
         uses: espressif/esp-idf-ci-action@v1
         with:
