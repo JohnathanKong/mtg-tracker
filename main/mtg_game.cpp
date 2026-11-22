@@ -581,6 +581,7 @@ void task(void *) {
     bool holdTriggered = false;
     int64_t touchStarted = 0;
     int touchX = 0, touchY = 0;
+    int startX = 0, startY = 0;
     while (true) {
         if (gReloadPending.exchange(false)) {
             loadDecksFromFlash();
@@ -593,21 +594,30 @@ void task(void *) {
         const bool currentlyDown = touchPoint(x, y);
         if (currentlyDown && !down) {
             touchStarted = esp_timer_get_time();
+            startX = x; startY = y;
             holdTriggered = false;
         }
         if (currentlyDown) {
             touchX = x; touchY = y;
             // Long hold over LIFE starts a *confirmation*, never an instant reset.
             if (!holdTriggered && gView.screen == MtgScreen::Dashboard &&
-                x >= 34 && x <= 161 && y >= 168 && y <= 235 &&
+                startX >= 115 && startX <= 245 &&
+                startY >= 117 && startY <= 181 &&
+                std::abs(x - startX) < 25 && std::abs(y - startY) < 25 &&
                 esp_timer_get_time() - touchStarted >= 1800000) {
                 gView.screen = MtgScreen::ConfirmReset;
                 holdTriggered = true;
                 publish();
             }
         }
-        if (!currentlyDown && down && !holdTriggered)
-            tap(touchX, touchY);
+        if (!currentlyDown && down && !holdTriggered) {
+            const int dx = touchX - startX;
+            const int dy = touchY - startY;
+            if (std::abs(dx) > 42 && std::abs(dx) > std::abs(dy) * 13 / 10)
+                swipe(dx < 0 ? +1 : -1);
+            else if (std::abs(dx) < 28 && std::abs(dy) < 28)
+                tap(touchX, touchY);
+        }
         down = currentlyDown;
 
         if (gDirty && esp_timer_get_time() - gLastChange >= 1500000)
