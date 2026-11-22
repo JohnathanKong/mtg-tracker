@@ -649,12 +649,14 @@ void drawCheckBox(int x, int y, bool checked) {
         }
     }
 }
-enum class BottomAnimation : uint8_t { None, Slide, Pulse };
+enum class BottomAnimation : uint8_t { None, Slide, Pulse, SnapBack };
 BottomAnimation gBottomAnimation = BottomAnimation::None;
 int64_t gAnimationStartedUs = 0;
 int gAnimatedTile = -1;
 int gSlideDirection = 1;
 float gAnimationProgress = 1.0f;
+float gSlideStartFraction = 0.0f;
+int gSnapFromOffset = 0;
 
 // Antialiased icon strokes at native resolution (only ~20px per icon).
 // No text labels are rendered on the bottom dashboard row.
@@ -993,12 +995,35 @@ void drawBottomPair(const MtgGameView &view, int shift) {
     if (view.tileCount > 1)
         drawSmallCounter(165+shift,259,view.tiles[1],1);
 }
+// Render the carousel at its *actual finger position*. Both pages are
+// clipped inside the fixed counter viewport, so they cannot escape the circle
+// or cover the in-row Edit pencil.
+void drawBottomFingerDrag(const MtgGameView &view,int offset) {
+    if (!gBackdrop) return;
+    bottomFromBackdrop();
+    gCounterClip=true;
+    gClipLeft=47;gClipRight=274;gClipTop=255;gClipBottom=290;
+    drawBottomPair(view,offset);
+    if (view.dragTargetPage>=0 && view.dragTileCount>0 && offset!=0) {
+        MtgGameView neighbor{};
+        neighbor.tileCount=view.dragTileCount;
+        for (int i=0;i<view.dragTileCount && i<2;++i)
+            neighbor.tiles[i]=view.dragTiles[i];
+        drawBottomPair(neighbor,offset+(offset<0?230:-230));
+    }
+    gCounterClip=false;
+    drawEditCounterButton();
+}
 void drawBottomTransition(const MtgGameView &before,
                           const MtgGameView &after,float progress) {
     if (!gBackdrop) return;
     bottomFromBackdrop();
     const float p=std::clamp(progress,0.0f,1.0f);
-    const float smooth=p*p*(3.0f-2.0f*p);
+    const float eased=p*p*(3.0f-2.0f*p);
+    // A completed finger drag starts its snap animation where it was
+    // released, instead of jumping back to the beginning of the page.
+    const float smooth=gSlideStartFraction +
+                       (1.0f-gSlideStartFraction)*eased;
     constexpr int travel=230;
     const int moved=int(float(travel)*smooth+0.5f);
     const int dir=gSlideDirection;
@@ -1207,6 +1232,9 @@ DirtyRows calculateDamage(const PendingStatus &before,
         damageChanged |= a.damageIndices[i] != b.damageIndices[i] ||
                          a.damageValues[i] != b.damageValues[i];
     if (damageChanged) dirty.add(197, 250);
+    if (a.dragActive != b.dragActive ||
+        a.dragOffsetPx != b.dragOffsetPx)
+        dirty.add(250, 320);
     bool tilesChanged = a.page != b.page || a.pageCount != b.pageCount ||
                         a.tileCount != b.tileCount;
     for (int i = 0; i < 4; ++i)
@@ -1338,8 +1366,20 @@ void displayTask(void *) {
                     gSlideToGame = now;
                     gBottomAnimation = BottomAnimation::Slide;
                     gSlideDirection = now.page > old.page ? 1 : -1;
+                    gSlideStartFraction = old.dragActive ?
+                        std::clamp(float(std::abs(old.dragOffsetPx))/230.0f,0.0f,1.0f) : 0.0f;
                     gAnimatedTile = -1;
                     gAnimationStartedUs = esp_timer_get_time();
+                } else if (old.dragActive && !now.dragActive &&
+                           old.page == now.page && gBackdrop) {
+                    // An insufficient swipe glides back to the starting page.
+                    gSlideFromGame=old;
+                    gSnapFromOffset=old.dragOffsetPx;
+                    gBottomAnimation=BottomAnimation::SnapBack;
+                    gAnimationStartedUs=esp_timer_get_time();
+                } else if (now.dragActive) {
+                    // Finger position is the animation clock while touching.
+                    gBottomAnimation=BottomAnimation::None;
                 } else {
                     int pulse = -1;
                     for (int i = 0; i < 2; ++i)
@@ -1359,13 +1399,22 @@ void displayTask(void *) {
                 gBottomAnimation = BottomAnimation::None;
             }
             gAnimationProgress = gBottomAnimation == BottomAnimation::None ? 1.0f : 0.0f;
-            if (snapshot.gameMode)
+            if (snapshot.gameMode && snapshot.game.dragActive &&
+                gBackdrop && hadFrame && previous.gameMode &&
+                previous.game.screen==MtgScreen::Dashboard &&
+                snapshot.game.screen==MtgScreen::Dashboard &&
+                std::strcmp(previous.game.deckId,snapshot.game.deckId)==0) {
+                drawBottomFingerDrag(snapshot.game,snapshot.game.dragOffsetPx);
+            } else if (snapshot.gameMode) {
                 drawDashboard(snapshot.game);
-            else
+            } else {
                 drawState(snapshot.state,snapshot.decks,snapshot.percent,
                           snapshot.detail);
+            }
             if (gBottomAnimation == BottomAnimation::Slide)
                 drawBottomTransition(gSlideFromGame,gSlideToGame,0.0f);
+            else if (gBottomAnimation == BottomAnimation::SnapBack)
+                drawBottomFingerDrag(gSlideFromGame,gSnapFromOffset);
             if (!presentDirty(dirty)) {
                 ESP_LOGE(kTag, "LCD transfer failed; USB sync remains active");
                 break;
@@ -1383,7 +1432,12 @@ void displayTask(void *) {
                 float(elapsed) / float(kAnimationDurationUs),0.0f,1.0f);
             if (gBottomAnimation == BottomAnimation::Slide)
                 drawBottomTransition(gSlideFromGame,gSlideToGame,gAnimationProgress);
-            else
+            else if (gBottomAnimation == BottomAnimation::SnapBack) {
+                const float p=gAnimationProgress;
+                const float eased=p*p*(3.0f-2.0f*p);
+                drawBottomFingerDrag(gSlideFromGame,
+                    int(float(gSnapFromOffset)*(1.0f-eased)));
+            } else
                 redrawBottomPulse(snapshot.game);
             if (!presentRows(250,292)) {
                 ESP_LOGE(kTag,"LCD bottom animation transfer failed");
