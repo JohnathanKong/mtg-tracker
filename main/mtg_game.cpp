@@ -8,6 +8,7 @@
 
 #include "mtg_game.h"
 #include "mtg_display.h"
+#include "mtg_rotary.h"
 
 #include <algorithm>
 #include <atomic>
@@ -46,12 +47,9 @@ std::vector<DeckMeta> gDecks;
 MtgGameView gView;
 portMUX_TYPE gViewLock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t gRotaryEvents = nullptr;
-// The knob GPIO7/8 are direction-specific active-LOW pulses, not quadrature.
-// Read each level at 2 ms cadence, require two consecutive LOW samples
-// to count exactly once, and two consecutive HIGH samples to re-arm.
-// This rejects switch bounce and does not depend on FreeRTOS tick rounding.
-struct PulseDebounce { uint8_t lows = 0, highs = 2; bool armed = true; };
-PulseDebounce gPulses[2];
+// Read GPIO7/8 at 2 ms cadence. Dispatch only AFTER a stable pulse release,
+// close to the mechanical click, rather than as the contact first closes.
+MtgRotaryPulse gPulses[2];
 esp_timer_handle_t gEncoderTimer = nullptr;
 std::atomic<bool> gReloadPending{false};
 uint32_t gArtworkRevision = 0;
@@ -206,19 +204,10 @@ void pollEncoder(void *) {
     const gpio_num_t pins[2] = {kClockwise, kCounterclockwise};
     const int directions[2] = {+1, -1};
     for (int i = 0; i < 2; ++i) {
-        PulseDebounce &pulse = gPulses[i];
-        if (gpio_get_level(pins[i]) == 0) {
-            pulse.highs = 0;
-            if (pulse.lows < 3) ++pulse.lows;
-            if (pulse.armed && pulse.lows >= 2) {
-                pulse.armed = false; // Never count twice until stable release
-                const int direction = directions[i];
-                xQueueSend(gRotaryEvents, &direction, 0);
-            }
-        } else {
-            pulse.lows = 0;
-            if (pulse.highs < 3) ++pulse.highs;
-            if (pulse.highs >= 2) pulse.armed = true;
+        MtgRotaryPulse &pulse = gPulses[i];
+        if (pulse.sample(gpio_get_level(pins[i]) == 0)) {
+            const int direction = directions[i];
+            xQueueSend(gRotaryEvents, &direction, 0);
         }
     }
 }
@@ -232,8 +221,7 @@ void initRotary() {
     config.pull_up_en = GPIO_PULLUP_ENABLE;
     config.intr_type = GPIO_INTR_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&config));
-    // Start armed only after the pins have both been sampled HIGH.
-    for (auto &pulse : gPulses) pulse = PulseDebounce{};
+    for (auto &pulse : gPulses) pulse = MtgRotaryPulse{};
     esp_timer_create_args_t timerConfig = {};
     timerConfig.callback = pollEncoder;
     timerConfig.name = "mtg_encoder";
@@ -243,7 +231,7 @@ void initRotary() {
         return;
     }
     ESP_ERROR_CHECK(esp_timer_start_periodic(gEncoderTimer, 2000));
-    ESP_LOGI(kTag, "Encoder stable-low/stable-high sampler started (2 ms)");
+    ESP_LOGI(kTag, "Encoder sends one step on debounced release (2 ms sampling)");
 }
 
 void initTouch() {
@@ -399,7 +387,7 @@ void task(void *) {
 
         if (gDirty && esp_timer_get_time() - gLastChange >= 1500000)
             writeState();
-        vTaskDelay(pdMS_TO_TICKS(25));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 } // namespace
