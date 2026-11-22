@@ -454,26 +454,37 @@ bool touchPoint(int &x, int &y) {
 
 void changeCounter(int direction) {
     int *number = nullptr;
-    switch (gView.selected) {
-    case MtgCounter::Life:   number = &gView.life; break;
-    case MtgCounter::Poison: number = &gView.poison; break;
-    case MtgCounter::Rad:    number = &gView.rad; break;
-    case MtgCounter::Damage: number = &gView.damage; break;
-    case MtgCounter::Casts:  number = &gView.casts; break;
-    case MtgCounter::Deaths: number = &gView.deaths; break;
-    }
+    if (gView.selected == MtgCounter::Life) number = &gView.life;
+    else if (gView.selected == MtgCounter::Casts) number = &gView.casts;
+    else if (gView.selected == MtgCounter::Dynamic &&
+             gActiveTracker >= 0 && gActiveTracker < int(gTrackers.size()))
+        number = &gTrackers[size_t(gActiveTracker)].value;
     if (!number) return;
-    *number = std::clamp(*number + direction,
-                         gView.selected == MtgCounter::Life ? -999 : 0, 9999);
+    const int updated = std::clamp(*number + direction,
+                                   gView.selected == MtgCounter::Life ? -999 : 0, 9999);
+    if (*number == updated) return;
+    *number = updated;
+    if (gView.selected == MtgCounter::Dynamic)
+        setLegacyValue(gTrackers[size_t(gActiveTracker)].id, updated);
     gDirty = true;
     gLastChange = esp_timer_get_time();
     publish();
 }
 
 void knobStep(int direction) {
-    if (gDecks.empty()) return;
-    if (gView.screen == MtgScreen::ConfirmReset) return;
-    if (gView.screen == MtgScreen::ChooseDeck) {
+    // Touch navigates; completed rotary pulses change only selected values.
+    if (gDecks.empty() || gView.screen != MtgScreen::Dashboard) return;
+    changeCounter(direction);
+}
+
+void swipe(int direction) {
+    if (gView.screen == MtgScreen::Dashboard) {
+        const int target = std::clamp(gView.page + direction, 0, gView.pageCount - 1);
+        if (gView.page != target) { gView.page = target; publish(); }
+    } else if (gView.screen == MtgScreen::AddCounter) {
+        const int target = std::clamp(gView.addPage + direction, 0, gView.addPageCount - 1);
+        if (gView.addPage != target) { gView.addPage = target; publish(); }
+    } else if (gView.screen == MtgScreen::ChooseDeck && !gDecks.empty()) {
         int index = (gView.deckIndex + direction) % int(gDecks.size());
         if (index < 0) index += int(gDecks.size());
         gView.deckIndex = index;
@@ -481,22 +492,23 @@ void knobStep(int direction) {
         std::snprintf(gView.deckName, sizeof(gView.deckName), "%s", d.name.c_str());
         std::snprintf(gView.commander, sizeof(gView.commander), "%s", d.commander.c_str());
         publish();
-    } else {
-        changeCounter(direction);
     }
 }
 
 void tap(int x, int y) {
     if (gDecks.empty()) return;
     if (gView.screen == MtgScreen::ConfirmReset) {
-        // Two distinct buttons; only a deliberate left-side tap resets.
         if (x >= 73 && x <= 175 && y >= 196 && y <= 247) {
             gView.life = 40;
             gView.poison = gView.rad = gView.damage = gView.casts = gView.deaths = 0;
+            // Keep Windows defaults, discard only game-added counters.
+            rebuildDefaults();
+            gActiveTracker = -1;
+            gView.page = 0;
             gView.selected = MtgCounter::Life;
             gDirty = true;
             gLastChange = esp_timer_get_time();
-            ESP_LOGI(kTag, "User confirmed new game for %s", gView.deckId);
+            ESP_LOGI(kTag, "New game confirmed for %s", gView.deckId);
         }
         gView.screen = MtgScreen::Dashboard;
         publish();
@@ -506,23 +518,53 @@ void tap(int x, int y) {
         selectDeck(gView.deckIndex);
         return;
     }
-    // Exact hit regions for the new portrait-left / four-row dashboard.
-    // Top-left artwork opens deck selection. Tax is derived from casts, so
-    // tapping either footer half selects the editable CASTS counter.
-    if (x < 168 && y < 145) {
+    if (gView.screen == MtgScreen::AddCounter) {
+        if (y < 90 || y > 317) {
+            gView.screen = MtgScreen::Dashboard;
+            publish();
+            return;
+        }
+        if (y >= 104 && y < 296) {
+            const int row = (y - 104) / 48;
+            const int index = gView.addPage * 4 + row;
+            if (row >= 0 && row < 4 && index < int(gAvailable.size()) &&
+                gTrackers.size() < kMaxActiveCounters) {
+                const CounterDef &item = gAvailable[size_t(index)];
+                gTrackers.push_back({item.id, item.label, 0, true});
+                gActiveTracker = int(gTrackers.size()) - 1;
+                gView.page = gActiveTracker / 4;
+                gView.selected = MtgCounter::Dynamic;
+                gDirty = true;
+                gLastChange = esp_timer_get_time();
+                gView.screen = MtgScreen::Dashboard;
+                publish();
+            }
+        }
+        return;
+    }
+
+    if (y < 113) {
         gView.screen = MtgScreen::ChooseDeck;
-    } else if (y >= 238) {
-        gView.selected = MtgCounter::Casts;
-    } else if (x >= 160 && y >= 43 && y < 88) {
-        gView.selected = MtgCounter::Poison;
-    } else if (x >= 160 && y >= 88 && y < 130) {
-        gView.selected = MtgCounter::Rad;
-    } else if (x >= 160 && y >= 130 && y < 173) {
-        gView.selected = MtgCounter::Damage;
-    } else if (x >= 160 && y >= 173 && y < 222) {
-        gView.selected = MtgCounter::Deaths;
-    } else {
+    } else if (y >= 300 && x >= 244 && x <= 288) {
+        gView.screen = MtgScreen::AddCounter;
+        gView.addPage = 0;
+    } else if (y >= 112 && y < 183) {
         gView.selected = MtgCounter::Life;
+        gActiveTracker = -1;
+    } else if (y >= 183 && y < 221) {
+        gView.selected = MtgCounter::Casts; // TAX is derived.
+        gActiveTracker = -1;
+    } else if (y >= 224 && y < 302) {
+        const int col = x >= 180 ? 1 : 0;
+        const int row = y < 263 ? 0 : 1;
+        const int tile = row * 2 + col;
+        const int index = gView.page * 4 + tile;
+        if (index < int(gTrackers.size()) &&
+            (row == 0 ? (col ? x >= 184 && x <= 327 : x >= 33 && x <= 176)
+                      : (col ? x >= 183 && x <= 307 : x >= 53 && x <= 177))) {
+            gActiveTracker = index;
+            gView.selected = MtgCounter::Dynamic;
+        }
     }
     publish();
 }
