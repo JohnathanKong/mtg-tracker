@@ -191,6 +191,16 @@ void writeState() {
     const Saved save{0x4D544731, gView.life, gView.poison, gView.rad,
                      gView.damage, gView.casts, gView.deaths};
     esp_err_t err = nvs_set_blob(handle, key, &save, sizeof(save));
+    StoredCounters extras;
+    extras.count = uint32_t(std::min(gTrackers.size(), kMaxActiveCounters));
+    for (size_t i = 0; i < extras.count; ++i) {
+        extras.items[i].idHash = crcId(gTrackers[i].id);
+        extras.items[i].value = gTrackers[i].value;
+        extras.items[i].temporary = gTrackers[i].temporary ? 1 : 0;
+    }
+    key[0] = 't';
+    if (err == ESP_OK)
+        err = nvs_set_blob(handle, key, &extras, sizeof(extras));
     if (err == ESP_OK)
         err = nvs_set_str(handle, "active", gDecks[size_t(gActiveDeckIndex)].id.c_str());
     if (err == ESP_OK) err = nvs_commit(handle);
@@ -201,6 +211,8 @@ void writeState() {
 
 void loadState(const std::string &id) {
     Saved save;
+    StoredCounters extras;
+    bool hasExtras = false;
     nvs_handle_t handle;
     if (nvs_open("mtg_game", NVS_READONLY, &handle) == ESP_OK) {
         char key[16]; nvsKey(key, id);
@@ -208,17 +220,57 @@ void loadState(const std::string &id) {
         if (nvs_get_blob(handle, key, &save, &length) != ESP_OK ||
             length != sizeof(save) || save.magic != 0x4D544731)
             save = Saved{};
+        key[0] = 't';
+        length = sizeof(extras);
+        hasExtras = nvs_get_blob(handle, key, &extras, &length) == ESP_OK &&
+                    length == sizeof(extras) && extras.magic == 0x4D543243 &&
+                    extras.count <= kMaxActiveCounters;
         nvs_close(handle);
     }
-    gView.life = save.life;
-    gView.poison = save.poison;
-    gView.rad = save.rad;
-    gView.damage = save.damage;
-    gView.casts = save.casts;
-    gView.deaths = save.deaths;
+    gView.life = save.life; gView.poison = save.poison; gView.rad = save.rad;
+    gView.damage = save.damage; gView.casts = save.casts; gView.deaths = save.deaths;
+    rebuildDefaults();
+    if (hasExtras) {
+        for (size_t i = 0; i < extras.count; ++i) {
+            const StoredCounter &stored = extras.items[i];
+            bool found = false;
+            for (auto &entry : gTrackers) {
+                if (crcId(entry.id) == stored.idHash) {
+                    entry.value = stored.value;
+                    setLegacyValue(entry.id, entry.value);
+                    found = true;
+                    break;
+                }
+            }
+            if (found || !stored.temporary ||
+                gTrackers.size() >= kMaxActiveCounters) continue;
+            for (const auto &definition : kCatalog) {
+                if (crcId(definition.id) == stored.idHash &&
+                    !alreadyActive(definition.id)) {
+                    gTrackers.push_back({definition.id, definition.label,
+                                         stored.value, true});
+                    found = true;
+                    break;
+                }
+            }
+            if (found || gActiveDeckIndex < 0 ||
+                gActiveDeckIndex >= int(gDecks.size())) continue;
+            for (const auto &definition : gDecks[size_t(gActiveDeckIndex)].custom) {
+                if (crcId(definition.id) == stored.idHash &&
+                    !alreadyActive(definition.id)) {
+                    gTrackers.push_back({definition.id, definition.label,
+                                         stored.value, true});
+                    break;
+                }
+            }
+        }
+    }
+    gActiveTracker = -1;
+    gView.page = 0;
+    gView.addPage = 0;
 }
-
 void publish() {
+    refreshCounterView();
     MtgGameView snapshot = gView;
     taskENTER_CRITICAL(&gViewLock);
     gView = snapshot;
