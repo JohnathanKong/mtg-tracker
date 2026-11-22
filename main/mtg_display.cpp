@@ -752,34 +752,70 @@ void drawDashboard(const MtgGameView &view) {
     }
 
     if (!gHasArt)
-        aaText({82, 67, 196, 25}, "SYNC ART", FreeSans18pt7b, 17, kMuted);
+        atlasText({88, 55, 184, 21}, "SYNC ART", 0, kMuted);
 
-    // The skin supplies the curved, beveled crest and sash without baking
-    // in the preview dragon, static digits, or extra tracker decorations.
+    // Static LIFE / CASTS / TAX / COMMANDER DAMAGE headings and gold filigree
+    // are part of the screenshot-derived chrome. Only live values are drawn.
     char number[24];
-
-    aaText({141, 115, 78, 17}, "LIFE", FreeSans18pt7b, 14, kGold);
     std::snprintf(number, sizeof(number), "%d", view.life);
-    aaText({111, 139, 138, 47}, number, FreeSerif24pt7b, 44,
-           view.selected == MtgCounter::Life ? kTeal : kIvory);
-
-    aaText({53, 192, 68, 18}, "CASTS", FreeSans18pt7b, 13, kIvory);
+    atlasText({134, 120, 92, 45}, number, 2,
+              view.selected == MtgCounter::Life ? kTeal : kIvory);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    aaText({128, 187, 49, 29}, number, FreeSans18pt7b, 23,
-           view.selected == MtgCounter::Casts ? kTeal : kIvory);
-
-    aaText({215, 192, 45, 18}, "TAX", FreeSans18pt7b, 13, kIvory);
+    atlasText({124, 159, 31, 27}, number, 1,
+              view.selected == MtgCounter::Casts ? kTeal : kIvory);
     std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    aaText({266, 187, 49, 29}, number, FreeSans18pt7b, 22, kGold);
+    atlasText({265, 160, 45, 25}, number, 1, kIvory);
 
-    // Four optional tiles per page, with the empty slots truly invisible.
-    if (view.tileCount > 0) drawCounterTile(31, 228, 146, 35, view.tiles[0]);
-    if (view.tileCount > 1) drawCounterTile(183, 228, 146, 35, view.tiles[1]);
-    if (view.tileCount > 2) drawCounterTile(55, 269, 123, 33, view.tiles[2]);
-    if (view.tileCount > 3) drawCounterTile(182, 269, 123, 33, view.tiles[3]);
-    drawPagination(view.page, view.pageCount, 322);
-    // The gold Add Counter ring is already present in the decorative skin
-    // at (264, 321); do not draw a blocky duplicate over it.
+    // Three opponent slots are visible at once, independent of optional
+    // counter pagination. Touch selects one opponent, dial adjusts damage;
+    // the ornate +/- controls add/remove opponents, never adjust a value.
+    const int labelX[3] = {84, 159, 232};
+    const int valueX[3] = {109, 184, 258};
+    for (int slot = 0; slot < 3; ++slot) {
+        const int opponent = view.damageIndices[slot];
+        if (!opponent) continue;
+        char player[12];
+        std::snprintf(player, sizeof(player), "P%d", opponent);
+        atlasText({labelX[slot], 215, 25, 23}, player, 0, kGold);
+        std::snprintf(number, sizeof(number), "%d", view.damageValues[slot]);
+        atlasText({valueX[slot], 211, 29, 29}, number, 1,
+                  view.selectedDamage == opponent - 1 ? kTeal : kIvory);
+    }
+    // A quiet page indicator appears only when there are more than 3 players.
+    if (view.damagePageCount > 1)
+        atlasText({147, 240, 66, 11}, "P", 0, kGold);
+
+    // At most TWO optional counters occupy the final row, never four.
+    // When none are configured, the chrome leaves both panels absent.
+    const int tileX[2] = {49, 182};
+    for (int tile = 0; tile < view.tileCount && tile < 2; ++tile) {
+        const MtgTile &entry = view.tiles[tile];
+        const int x = tileX[tile];
+        char label[36];
+        std::snprintf(label, sizeof(label), "%s", entry.label);
+        // One-line "CMD DEATHS"/"CMD DAMAGE" reads better than clipped text.
+        if (std::strncmp(label, "Commander ", 10) == 0) {
+            char shorter[36];
+            std::snprintf(shorter, sizeof(shorter), "CMD %.25s", label + 10);
+            std::snprintf(label, sizeof(label), "%s", shorter);
+        }
+        atlasText({x + 25, 260, 72, 20}, label, 0,
+                  entry.selected ? kTeal : kIvory);
+        std::snprintf(number, sizeof(number), "%d", entry.value);
+        atlasText({x + 99, 255, 27, 30}, number, 1,
+                  entry.selected ? kTeal : kIvory);
+    }
+
+    // Only counter pages move on a horizontal swipe. Life, Casts, Tax and
+    // Commander Damage always remain visible.
+    const int dots = std::min(5, std::max(1, view.pageCount));
+    const int dotStart = 180 - (dots - 1) * 10 / 2;
+    for (int i = 0; i < dots; ++i) {
+        fillRound(dotStart + i * 10 - 2, 302, 5, 5, 2,
+                  i == view.page ? kGold : kGoldDim);
+    }
+    // Secondary Add Counter button is kept distinct from damage +/-.
+    drawPlusNavigation(285, 306);
 }
 void drawShell() {
     std::fill(gFrame, gFrame + kWidth * kHeight, kBg);
