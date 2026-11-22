@@ -32,6 +32,13 @@ struct MtgGameView {
     int page = 0, pageCount = 1;
     int tileCount = 0;
     MtgTile tiles[4]{};
+    // Touch-controlled horizontal carousel. The offset is in physical pixels
+    // and updates while the finger moves, not just when it is released.
+    bool dragActive = false;
+    int dragOffsetPx = 0;
+    int dragTargetPage = -1;
+    int dragTileCount = 0;
+    MtgTile dragTiles[2]{};
     int damagePlayers = 3;
     int damagePage = 0;
     int damagePageCount = 1;
