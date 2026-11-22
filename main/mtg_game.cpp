@@ -146,7 +146,8 @@ bool alreadyActive(const std::string &id) {
 void refreshAvailable() {
     gAvailable.clear();
     for (const auto &entry : kCatalog)
-        if (!alreadyActive(entry.id)) gAvailable.push_back(entry);
+        if (!isPermanent(entry.id) && !alreadyActive(entry.id))
+            gAvailable.push_back(entry);
     if (gActiveDeckIndex >= 0 && gActiveDeckIndex < int(gDecks.size())) {
         for (const auto &entry : gDecks[size_t(gActiveDeckIndex)].custom)
             if (!alreadyActive(entry.id)) gAvailable.push_back(entry);
@@ -287,7 +288,8 @@ void loadState(const std::string &id) {
             if (found || !stored.temporary ||
                 gTrackers.size() >= kMaxActiveCounters) continue;
             for (const auto &definition : kCatalog) {
-                if (crcId(definition.id) == stored.idHash &&
+                if (!isPermanent(definition.id) &&
+                    crcId(definition.id) == stored.idHash &&
                     !alreadyActive(definition.id)) {
                     gTrackers.push_back({definition.id, definition.label,
                                          stored.value, true});
