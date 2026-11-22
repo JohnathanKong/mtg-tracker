@@ -808,11 +808,15 @@ void task(void *) {
         }
         if (currentlyDown) {
             touchX = x; touchY = y;
-            // The bottom counter carousel tracks the finger in real time.
-            // Leave the Edit pencil and the permanent damage row untouched.
-            if (gView.screen == MtgScreen::Dashboard &&
-                startY >= 250 && startY <= 314 && startX >= 39 &&
-                startX < 276 && gView.pageCount > 1) {
+            // Horizontal swipes move the bottom counter carousel from most
+            // of the dashboard, just like the prior gesture handler. Player
+            // damage has its own swipe region; EDIT remains a tap target.
+            const bool damageSwipe = startY >= 195 && startY <= 253;
+            const bool editTarget = startY >= 256 && startY <= 289 &&
+                                    startX >= 279 && startX <= 321;
+            if (gView.screen == MtgScreen::Dashboard && !damageSwipe &&
+                !editTarget && startY >= 42 && startY <= 335 &&
+                startX >= 25 && startX <= 335 && gView.pageCount > 1) {
                 const int dx = x - startX, dy = y - startY;
                 if (!draggingCounterPages && std::abs(dx) >= 10 &&
                     std::abs(dx) > std::abs(dy)) {
@@ -835,7 +839,8 @@ void task(void *) {
                 }
             }
             // Long hold over LIFE starts a *confirmation*, never an instant reset.
-            if (!holdTriggered && gView.screen == MtgScreen::Dashboard &&
+            if (!holdTriggered && !draggingCounterPages &&
+                gView.screen == MtgScreen::Dashboard &&
                 startX >= 115 && startX <= 245 &&
                 startY >= 117 && startY <= 181 &&
                 std::abs(x - startX) < 25 && std::abs(y - startY) < 25 &&
