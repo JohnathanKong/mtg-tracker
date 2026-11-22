@@ -47,8 +47,8 @@ uint8_t *gSkin = nullptr;      // 4-bit packed 360x360 antialiased ornate chrome
 char gLoadedArtId[96] = {};
 uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
-extern "C" const uint8_t skin_start[] asm("_binary_ui_ornate_hud_360_lz4_start");
-extern "C" const uint8_t skin_end[] asm("_binary_ui_ornate_hud_360_lz4_end");
+extern "C" const uint8_t skin_start[] asm("_binary_ui_reference_chrome_360_lz4_start");
+extern "C" const uint8_t skin_end[] asm("_binary_ui_reference_chrome_360_lz4_end");
 
 
 // All USB callbacks update only this small pending status, never the LCD
@@ -89,7 +89,7 @@ inline void pixel(int x, int y, uint16_t ink);
 
 // Asset: 360x360 antialiased 32-color RGBA palette and LZ4 pixels.
 // Chrome and decoration contain no baked-in commander art or changing values.
-constexpr size_t kPaletteByteSize = 32 * 4;
+constexpr size_t kPaletteByteSize = 64 * 4;
 
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
@@ -194,23 +194,24 @@ void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha)
 }
 void applyOrnateSkin(const MtgGameView &view) {
     if (!gSkin) return;
-    for (int y = 0; y < 355; ++y) {
-        for (int x = 0; x < kWidth; ++x) {
-            // The decorative counter modules must appear only if configured.
-            const int slot =
-                (y >= 228 && y <= 263 && x >= 30 && x <= 178) ? 0 :
-                (y >= 228 && y <= 263 && x >= 182 && x <= 329) ? 1 :
-                (y >= 269 && y <= 302 && x >= 54 && x <= 179) ? 2 :
-                (y >= 269 && y <= 302 && x >= 181 && x <= 306) ? 3 : -1;
-            // Empty slots receive only the ambient footer gradient sampled
-            // from the central gap, never the blank tile outline or fill.
-            // This avoids brighter rectangular holes when zero counters exist.
-            const size_t off = size_t(y) * 360 + x;
-            const size_t sample = (slot >= view.tileCount && slot >= 0)
-                ? size_t(y) * 360 + 180 : off;
-            const uint8_t idx = gSkin[sample];
-            const uint8_t *c = skin_start + 4 * idx;
-            if (c[3] > 0) blendInk(x, y, c[0], c[1], c[2], c[3]);
+    for (int y = 0; y < 360; ++y) {
+        for (int x = 0; x < 360; ++x) {
+            const bool optionalLeft = y >= 250 && y <= 287 &&
+                                      x >= 46 && x <= 179;
+            const bool optionalRight = y >= 250 && y <= 287 &&
+                                       x >= 181 && x <= 315;
+            if ((optionalLeft && view.tileCount == 0) ||
+                (optionalRight && view.tileCount <= 1)) continue;
+            const int player = y >= 211 && y <= 245 ?
+                (x >= 75 && x <= 140 ? 0 :
+                 x >= 144 && x <= 215 ? 1 :
+                 x >= 217 && x <= 286 ? 2 : -1) : -1;
+            if (player >= 0 && !view.damageIndices[player]) continue;
+            const size_t off = size_t(y) * 360u + size_t(x);
+            const uint8_t idx = gSkin[off];
+            if (idx >= 64) continue;
+            const uint8_t *rgba = skin_start + idx * 4u;
+            if (rgba[3]) blendInk(x, y, rgba[0], rgba[1], rgba[2], rgba[3]);
         }
     }
 }
