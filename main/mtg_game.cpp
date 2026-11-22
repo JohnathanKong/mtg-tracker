@@ -522,13 +522,22 @@ void knobStep(int direction) {
     changeCounter(direction);
 }
 
-void swipe(int direction) {
+void swipe(int direction, int originY) {
     if (gView.screen == MtgScreen::Dashboard) {
-        const int target = std::clamp(gView.page + direction, 0, gView.pageCount - 1);
-        if (gView.page != target) { gView.page = target; publish(); }
+        if (originY >= 195 && originY <= 253) {
+            const int maxPage = std::max(0, (gOpponentCount - 1) / 3);
+            const int target = std::clamp(gOpponentPage + direction, 0, maxPage);
+            if (target != gOpponentPage) {
+                gOpponentPage = target;
+                publish();
+            }
+        } else {
+            const int target = std::clamp(gView.page + direction, 0, gView.pageCount - 1);
+            if (target != gView.page) { gView.page = target; publish(); }
+        }
     } else if (gView.screen == MtgScreen::AddCounter) {
         const int target = std::clamp(gView.addPage + direction, 0, gView.addPageCount - 1);
-        if (gView.addPage != target) { gView.addPage = target; publish(); }
+        if (target != gView.addPage) { gView.addPage = target; publish(); }
     } else if (gView.screen == MtgScreen::ChooseDeck && !gDecks.empty()) {
         int index = (gView.deckIndex + direction) % int(gDecks.size());
         if (index < 0) index += int(gDecks.size());
@@ -540,12 +549,38 @@ void swipe(int direction) {
     }
 }
 
+void changeOpponentCount(int delta) {
+    if (delta > 0 && gOpponentCount < kMaxOpponents) {
+        gOpponentDamage[gOpponentCount] = 0;
+        ++gOpponentCount;
+        gOpponentPage = (gOpponentCount - 1) / 3;
+    } else if (delta < 0 && gOpponentCount > 1) {
+        --gOpponentCount;
+        gOpponentDamage[gOpponentCount] = 0;
+        gOpponentPage = std::min(gOpponentPage, (gOpponentCount - 1) / 3);
+        if (gOpponentSelected >= gOpponentCount) {
+            gOpponentSelected = -1;
+            gView.selected = MtgCounter::Life;
+        }
+    } else {
+        return;
+    }
+    gDirty = true;
+    gLastChange = esp_timer_get_time();
+    publish();
+}
+
 void tap(int x, int y) {
     if (gDecks.empty()) return;
     if (gView.screen == MtgScreen::ConfirmReset) {
         if (x >= 73 && x <= 175 && y >= 196 && y <= 247) {
             gView.life = 40;
             gView.poison = gView.rad = gView.damage = gView.casts = gView.deaths = 0;
+            // New games start with exactly three opponents and no damage dealt.
+            gOpponentCount = 3;
+            gOpponentPage = 0;
+            gOpponentSelected = -1;
+            for (int &damage : gOpponentDamage) damage = 0;
             // Keep Windows defaults, discard only game-added counters.
             rebuildDefaults();
             gActiveTracker = -1;
@@ -588,28 +623,45 @@ void tap(int x, int y) {
         return;
     }
 
-    if (y < 113) {
+    if (y < 101) {
         gView.screen = MtgScreen::ChooseDeck;
-    } else if (y >= 301 && y <= 344 && x >= 242 && x <= 288) {
-        gView.screen = MtgScreen::AddCounter;
-        gView.addPage = 0;
-    } else if (y >= 112 && y < 183) {
+    } else if (y >= 207 && y <= 249 && x >= 25 && x <= 70) {
+        changeOpponentCount(-1);
+        return;
+    } else if (y >= 207 && y <= 249 && x >= 290 && x <= 335) {
+        changeOpponentCount(+1);
+        return;
+    } else if (y >= 209 && y <= 245 && x >= 73 && x <= 287) {
+        int segment = x < 144 ? 0 : x < 217 ? 1 : 2;
+        const int opponent = gOpponentPage * 3 + segment;
+        if (opponent < gOpponentCount) {
+            gOpponentSelected = opponent;
+            gActiveTracker = -1;
+            gView.selected = MtgCounter::CommanderDamage;
+        }
+    } else if (y >= 107 && y <= 160) {
         gView.selected = MtgCounter::Life;
         gActiveTracker = -1;
-    } else if (y >= 183 && y < 221) {
-        gView.selected = MtgCounter::Casts; // TAX is derived.
+        gOpponentSelected = -1;
+    } else if (y >= 160 && y < 191) {
+        gView.selected = MtgCounter::Casts;
         gActiveTracker = -1;
-    } else if (y >= 224 && y < 303) {
-        const int col = x >= 180 ? 1 : 0;
-        const int row = y < 263 ? 0 : 1;
-        const int tile = row * 2 + col;
-        const int index = gView.page * 4 + tile;
-        if (index < int(gTrackers.size()) &&
-            (row == 0 ? (col ? x >= 184 && x <= 327 : x >= 33 && x <= 176)
-                      : (col ? x >= 183 && x <= 307 : x >= 53 && x <= 177))) {
+        gOpponentSelected = -1;
+    } else if (y >= 257 && y <= 287) {
+        const int tile = x < 180 ? 0 : 1;
+        const int index = gView.page * 2 + tile;
+        if (index < int(gTrackers.size()) && x > 43 && x < 315) {
             gActiveTracker = index;
+            gOpponentSelected = -1;
             gView.selected = MtgCounter::Dynamic;
+        } else if (gTrackers.size() < kMaxActiveCounters) {
+            gView.screen = MtgScreen::AddCounter;
+            gView.addPage = 0;
         }
+    } else if (y >= 293 && y <= 334 && x >= 260 && x <= 322) {
+        // Discreet Add Counter affordance, distinct from opponent +/- buttons.
+        gView.screen = MtgScreen::AddCounter;
+        gView.addPage = 0;
     }
     publish();
 }
@@ -659,7 +711,7 @@ void task(void *) {
             const int dx = touchX - startX;
             const int dy = touchY - startY;
             if (std::abs(dx) > 42 && std::abs(dx) > std::abs(dy) * 13 / 10)
-                swipe(dx < 0 ? +1 : -1);
+                swipe(dx < 0 ? +1 : -1, startY);
             else if (std::abs(dx) < 28 && std::abs(dy) < 28)
                 tap(touchX, touchY);
         }
