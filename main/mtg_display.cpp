@@ -466,31 +466,6 @@ void drawPagination(int current, int total, int y) {
                   n == current ? kGold : color(85, 92, 103));
     }
 }
-// Small, independent Add Counter control in the lower-right. Unlike the
-// opponent '+' in the damage strip, this opens the optional counter chooser.
-// Soft RGB565 blending keeps the ring round at 360px rather than pixel-stepped.
-void drawPlusNavigation(int cx, int cy) {
-    constexpr int outerRadius = 14;
-    constexpr int innerRadius = 12;
-    for (int yy = -outerRadius-1; yy <= outerRadius+1; ++yy) {
-        for (int xx = -outerRadius-1; xx <= outerRadius+1; ++xx) {
-            const int r2 = xx * xx + yy * yy;
-            if (r2 > (outerRadius+1) * (outerRadius+1)) continue;
-            if (r2 <= innerRadius * innerRadius) {
-                blendInk(cx + xx, cy + yy, 8, 23, 23, 195);
-            } else if (r2 <= outerRadius * outerRadius) {
-                blendInk(cx + xx, cy + yy, 239, 191, 105, 235);
-            } else {
-                blendInk(cx + xx, cy + yy, 239, 191, 105, 55);
-            }
-        }
-    }
-    for (int dx = -6; dx <= 6; ++dx)
-        blendInk(cx + dx, cy, 255, 218, 152, 255);
-    for (int dy = -6; dy <= 6; ++dy)
-        blendInk(cx, cy + dy, 255, 218, 152, 255);
-}
-
 // Antialias by integrating sixteen subpixel samples from the larger bundled
 // GFX glyphs. Labels are downsampled from 18pt shapes rather than rendering
 // jagged 5x7 uppercase blocks or stretching small text.
@@ -806,8 +781,9 @@ void drawDashboard(const MtgGameView &view) {
         atlasText({valueX[slot], 211, 29, 29}, number, 1,
                   view.selectedDamage == opponent - 1 ? kTeal : kIvory);
     }
-    // Compact counters leave room for an always-present EDIT button.
-    // The older oversized bitmap panels are removed from the backdrop.
+    // A soft glass tray covers the old thumbnail geometry and carries the
+    // two compact counters plus the dedicated EDIT button.
+    softCapsule(42, 250, 277, 41, 19, 136, 109, 67);
     if (view.tileCount > 0) drawSmallCounter(50, 259, view.tiles[0]);
     if (view.tileCount > 1) drawSmallCounter(165, 259, view.tiles[1]);
     drawEditCounterButton();
