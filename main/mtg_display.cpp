@@ -758,6 +758,78 @@ void drawEditCounterButton() {
     softStroke(291,278,302,278,1.1f,190,153,93);
 }
 
+
+// Native-resolution HUD components. The previous UI extracted shapes from a
+// photograph and erased numbers with rectangular patches, cutting Life,
+// opponent and circular borders. These components have complete geometry and
+// are independently composited over the deck artwork.
+void drawBezier(float x0,float y0,float x1,float y1,
+                float x2,float y2,float x3,float y3,
+                float thickness,uint8_t r,uint8_t g,uint8_t b) {
+    float px=x0, py=y0;
+    constexpr int kSegments=18;
+    for (int i=1;i<=kSegments;++i) {
+        const float t=float(i)/float(kSegments), u=1.0f-t;
+        const float nx=u*u*u*x0+3*u*u*t*x1+3*u*t*t*x2+t*t*t*x3;
+        const float ny=u*u*u*y0+3*u*u*t*y1+3*u*t*t*y2+t*t*t*y3;
+        softStroke(px,py,nx,ny,thickness,r,g,b);
+        px=nx; py=ny;
+    }
+}
+
+void drawNativeCircle() {
+    // Single continuous gold circle, with antialiasing at its edges.
+    // 1.9px ring is deliberately not split into top and bottom assets.
+    for (int y=4;y<356;++y) for (int x=4;x<356;++x) {
+        const float dx=float(x)-179.5f, dy=float(y)-179.5f;
+        const float d=std::sqrt(dx*dx+dy*dy);
+        const float coverage=std::clamp(1.25f-std::fabs(d-171.8f),0.0f,1.0f);
+        if (coverage>0.0f)
+            blendInk(x,y,246,194,103,int(coverage*246.0f));
+    }
+}
+void drawNativeChrome(const MtgGameView &view) {
+    // The gold/teal controls sit below the hero artwork as one set of
+    // independently drawn components; every border is fully closed.
+    softCapsule(29,157,302,42,18,212,168,84);
+    softStroke(44,160,103,160,1.3f,223,182,103);
+    softStroke(257,160,316,160,1.3f,223,182,103);
+    softStroke(180,164,180,194,1.0f,120,154,141);
+
+    // Fitted center crest, drawn AFTER the Casts/Tax strip so it overlaps
+    // cleanly like a web z-index layer. No pasted bitmap holes.
+    softCapsule(110,98,140,75,28,238,193,102);
+    drawBezier(110,135,102,144,100,147,88,154,1.6f,235,177,90);
+    drawBezier(250,135,258,144,260,147,272,154,1.6f,235,177,90);
+    drawBezier(146,171,166,174,171,183,180,190,1.6f,237,186,100);
+    drawBezier(180,190,189,183,194,174,214,171,1.6f,237,186,100);
+
+    // Commander damage is a permanent, independently bordered region.
+    softStroke(32,208,100,208,1.3f,197,150,76);
+    softStroke(260,208,328,208,1.3f,197,150,76);
+    softCapsule(26,210,308,40,18,202,159,84);
+    for(int slot=0;slot<3;++slot) {
+        if(!view.damageIndices[slot])continue;
+        const int x=77+73*slot;
+        softCapsule(x,215,66,29,10,
+                    view.selectedDamage==view.damageIndices[slot]-1?111:206,
+                    view.selectedDamage==view.damageIndices[slot]-1?225:117,
+                    view.selectedDamage==view.damageIndices[slot]-1?184:100,
+                    view.selectedDamage==view.damageIndices[slot]-1);
+    }
+    // Real circular minus and plus controls (tap sizes match their bounds).
+    softCapsule(32,215,31,31,15,228,188,101);
+    softCapsule(297,215,31,31,15,228,188,101);
+    softStroke(40,230,55,230,2.1f,251,222,161);
+    softStroke(305,230,320,230,2.1f,251,222,161);
+    softStroke(312,222,312,238,2.1f,251,222,161);
+
+    // Bottom decorative flourish sits entirely inside the screen circle.
+    drawBezier(69,306,109,312,123,308,145,305,1.4f,172,122,64);
+    drawBezier(215,305,237,308,251,312,291,306,1.4f,172,122,64);
+    drawNativeCircle();
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     bool reuse = gBackdrop && gBackdropValid &&
@@ -770,6 +842,7 @@ void drawDashboard(const MtgGameView &view) {
     } else {
         drawHeroArt();
         applyOrnateSkin(view);
+        drawNativeChrome(view);
         if (gBackdrop) {
             std::memcpy(gBackdrop, gFrame, 360u * 360u * 2u);
             std::snprintf(gBackdropDeck, sizeof(gBackdropDeck), "%s", view.deckId);
@@ -872,10 +945,8 @@ void drawDashboard(const MtgGameView &view) {
         atlasText({valueX[slot], 211, 29, 29}, number, 1,
                   view.selectedDamage == opponent - 1 ? kTeal : kIvory);
     }
-    // A soft glass tray covers the old thumbnail geometry and carries the
-    // two compact counters plus the dedicated EDIT button.
-    // With no optional trackers, leave this row visually empty except EDIT.
-    if (view.tileCount > 0) softCapsule(42, 250, 277, 41, 19, 136, 109, 67);
+    // No oversized shared tray: its corners escaped the round safe area.
+    // Individual capsules and Edit all remain inside the native circle.
     if (view.tileCount > 0) drawSmallCounter(50, 259, view.tiles[0], 0);
     if (view.tileCount > 1) drawSmallCounter(165, 259, view.tiles[1], 1);
     drawEditCounterButton();
