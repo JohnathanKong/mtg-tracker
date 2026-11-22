@@ -867,7 +867,7 @@ void task(void *) {
                     const int offset = mtg_scroll::clampScroll(
                         editStartScroll - dy, int(gAvailable.size()));
                     if (offset != gView.editScrollPx &&
-                        now - editLastDrawUs >= 24000) {
+                        now - editLastDrawUs >= 18000) {
                         gView.editScrollPx = offset;
                         editLastDrawUs = now;
                         publish();
@@ -895,7 +895,7 @@ void task(void *) {
                         offset = 0;
                     const int64_t now = esp_timer_get_time();
                     if ((std::abs(offset - gView.dragOffsetPx) >= 2 &&
-                         now - lastDragDrawUs >= 24000) ||
+                         now - lastDragDrawUs >= 18000) ||
                         (!gView.dragActive && offset != 0)) {
                         gView.dragActive = offset != 0;
                         gView.dragOffsetPx = offset;
@@ -974,7 +974,7 @@ void task(void *) {
             // Accumulate every physics step, even while coalescing LCD
             // frames. Never discard movement because a frame was throttled.
             if (next != gView.editScrollPx &&
-                now - editLastDrawUs >= 27000) {
+                now - editLastDrawUs >= 20000) {
                 gView.editScrollPx = next;
                 editLastDrawUs = now;
                 publish();
