@@ -76,6 +76,10 @@ struct PendingStatus {
 };
 portMUX_TYPE gStatusLock = portMUX_INITIALIZER_UNLOCKED;
 PendingStatus gPending;
+MtgGameView gSlideFromGame{};
+MtgGameView gSlideToGame{};
+bool gCounterClip = false;
+int gClipLeft = 0, gClipRight = 359, gClipTop = 0, gClipBottom = 359;
 
 
 constexpr uint16_t color(unsigned red, unsigned green, unsigned blue) {
@@ -248,6 +252,8 @@ void loadArtFor(const MtgGameView &view) {
 // capsules. The 32-entry palette is RGBA; index zero is fully transparent.
 void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha) {
     if (x < 0 || y < 0 || x >= kWidth || y >= kHeight || alpha <= 0) return;
+    if (gCounterClip && (x < gClipLeft || x > gClipRight ||
+                          y < gClipTop || y > gClipBottom)) return;
     if (alpha >= 255) {
         pixel(x, y, color(red, green, blue));
         return;
@@ -731,13 +737,9 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
 }
 void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
     const float p = std::clamp(gAnimationProgress, 0.0f, 1.0f);
-    // A 10px ease-out slide when the user swipes to a different pair.
-    const int dx = gBottomAnimation == BottomAnimation::Slide ?
-        int(float(gSlideDirection) * 10.0f * (1.0f-p) * (1.0f-p)) : 0;
     // A short gold/teal highlight on selection or value changes.
     const int glow = gBottomAnimation == BottomAnimation::Pulse &&
                      gAnimatedTile == index ? int(68.0f * (1.0f-p)) : 0;
-    x += dx;
     softCapsule(x, y, 106, 25, 12,
                 uint8_t(std::min(255, (tile.selected ? 114 : 190) + glow)),
                 uint8_t(std::min(255, (tile.selected ? 230 : 152) + glow)),
@@ -968,6 +970,47 @@ void drawDashboard(const MtgGameView &view) {
     }
     // Optional counter selection is handled by EDIT, not a plus icon.
 }
+
+// Real page transition: both outgoing and incoming counter pairs move
+// completely across a clipped viewport, rather than nudging the new pair
+// ten pixels. The rest of the HUD, particularly Edit, never moves.
+void bottomFromBackdrop() {
+    if (!gBackdrop) return;
+    for(int y=250;y<292;++y)
+        std::memcpy(gFrame+size_t(y)*360u,gBackdrop+size_t(y)*360u,360u*2u);
+}
+void drawBottomPair(const MtgGameView &view, int shift) {
+    if (view.tileCount > 0)
+        drawSmallCounter(50+shift,259,view.tiles[0],0);
+    if (view.tileCount > 1)
+        drawSmallCounter(165+shift,259,view.tiles[1],1);
+}
+void drawBottomTransition(const MtgGameView &before,
+                          const MtgGameView &after,float progress) {
+    if (!gBackdrop) return;
+    bottomFromBackdrop();
+    const float p=std::clamp(progress,0.0f,1.0f);
+    const float smooth=p*p*(3.0f-2.0f*p);
+    constexpr int travel=230;
+    const int moved=int(float(travel)*smooth+0.5f);
+    const int dir=gSlideDirection;
+    gCounterClip=true;
+    gClipLeft=47;gClipRight=274;gClipTop=255;gClipBottom=290;
+    drawBottomPair(before,-dir*moved);
+    drawBottomPair(after,dir*(travel-moved));
+    gCounterClip=false;
+    drawEditCounterButton();
+}
+void redrawBottomPulse(const MtgGameView &view) {
+    if (!gBackdrop) return;
+    bottomFromBackdrop();
+    gCounterClip=true;
+    gClipLeft=47;gClipRight=274;gClipTop=255;gClipBottom=290;
+    drawBottomPair(view,0);
+    gCounterClip=false;
+    drawEditCounterButton();
+}
+
 void drawShell() {
     std::fill(gFrame, gFrame + kWidth * kHeight, kBg);
     // Rings live at the edge of the round screen, not in the corners.
@@ -1281,7 +1324,10 @@ void displayTask(void *) {
                 std::strcmp(previous.game.deckId,snapshot.game.deckId) == 0) {
                 const MtgGameView &old = previous.game;
                 const MtgGameView &now = snapshot.game;
-                if (old.page != now.page && now.tileCount > 0) {
+                if (old.page != now.page &&
+                    (old.tileCount > 0 || now.tileCount > 0) && gBackdrop) {
+                    gSlideFromGame = old;
+                    gSlideToGame = now;
                     gBottomAnimation = BottomAnimation::Slide;
                     gSlideDirection = now.page > old.page ? 1 : -1;
                     gAnimatedTile = -1;
@@ -1310,6 +1356,8 @@ void displayTask(void *) {
             else
                 drawState(snapshot.state,snapshot.decks,snapshot.percent,
                           snapshot.detail);
+            if (gBottomAnimation == BottomAnimation::Slide)
+                drawBottomTransition(gSlideFromGame,gSlideToGame,0.0f);
             if (!presentDirty(dirty)) {
                 ESP_LOGE(kTag, "LCD transfer failed; USB sync remains active");
                 break;
@@ -1318,14 +1366,18 @@ void displayTask(void *) {
             previous = snapshot;
             hadFrame = true;
         } else if (gBottomAnimation != BottomAnimation::None) {
-            // Only animate the optional row for ~140ms. No blocking sleeps
-            // and no redraws when the animation is complete.
-            constexpr int64_t kAnimationDurationUs = 140000;
+            // ~220ms eased horizontal page transition, with both outgoing
+            // and incoming content visible. One 42-row region per frame;
+            // touch/rotary events can interrupt at any moment.
+            constexpr int64_t kAnimationDurationUs = 220000;
             const int64_t elapsed = esp_timer_get_time() - gAnimationStartedUs;
             gAnimationProgress = std::clamp(
                 float(elapsed) / float(kAnimationDurationUs),0.0f,1.0f);
-            drawDashboard(snapshot.game);
-            if (!presentRows(247,320)) {
+            if (gBottomAnimation == BottomAnimation::Slide)
+                drawBottomTransition(gSlideFromGame,gSlideToGame,gAnimationProgress);
+            else
+                redrawBottomPulse(snapshot.game);
+            if (!presentRows(250,292)) {
                 ESP_LOGE(kTag,"LCD bottom animation transfer failed");
                 break;
             }
@@ -1335,7 +1387,7 @@ void displayTask(void *) {
         // Only wake periodically during the brief bottom-row animation.
         // Idle screen stays asleep; fresh input wakes immediately.
         ulTaskNotifyTake(pdTRUE, gBottomAnimation == BottomAnimation::None ?
-                         portMAX_DELAY : pdMS_TO_TICKS(30));
+                         portMAX_DELAY : pdMS_TO_TICKS(27));
     }
     gDisplayTask = nullptr;
     vTaskDelete(nullptr);
