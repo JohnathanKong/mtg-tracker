@@ -14,6 +14,7 @@
 
 #include "mtg_display.h"
 #include "mtg_game.h"
+#include "mtg_protocol.h"
 #include "cJSON.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_err.h"
@@ -35,7 +36,7 @@ constexpr char kFolder[] = "/mtg";
 constexpr char kLive[] = "/mtg/decks.json";
 constexpr char kTemp[] = "/mtg/decks.tmp";
 constexpr char kBackup[] = "/mtg/decks.bak";
-constexpr size_t kArtworkBytes = 360 * 360 * 2;
+constexpr size_t kArtworkBytes = mtg_protocol::kArtworkBytes;
 enum class TransferKind { None, Library, Artwork };
 TransferKind transferKind = TransferKind::None;
 char artId[9] = {};
@@ -290,6 +291,11 @@ void processLine(const char *command) {
         mtg_display_show(MthStatus::Ready, shownDeckCount);
         return;
     }
+    if (std::strcmp(command, "MTG1 CAPS") == 0) {
+        if (receiving) { replyError("BUSY"); return; }
+        reply("MTG1 CAPS ART RGB565 360 360 1024");
+        return;
+    }
     if (std::strcmp(command, "MTG1 STATUS") == 0) {
         if (receiving) { replyError("BUSY"); return; }
         char output[100];
@@ -301,22 +307,25 @@ void processLine(const char *command) {
     if (std::strncmp(command, "MTG1 ART ", 9) == 0) {
         if (!storageReady) { replyError("STORAGE"); return; }
         if (receiving) { replyError("BUSY"); return; }
-        char id[9] = {}, hex[9] = {}, extra = '\0';
-        unsigned long size = 0;
-        if (std::sscanf(command, "MTG1 ART %8[0-9A-F] %lu %8[0-9A-F] %c",
-                        id, &size, hex, &extra) != 3 ||
-            std::strlen(id) != 8 || std::strlen(hex) != 8 ||
-            size != kArtworkBytes) {
-            replyError("ART_BEGIN"); return;
+        mtg_protocol::ArtworkHeader header;
+        const auto parsed = mtg_protocol::parseArtworkHeader(command, header);
+        if (parsed == mtg_protocol::ArtworkHeaderResult::Invalid) {
+            replyError("ART_HEADER"); return;
         }
-        std::snprintf(artId, sizeof(artId), "%s", id);
-        std::snprintf(artStaging, sizeof(artStaging), "/mtg/a%s.tmp", id);
-        std::snprintf(artTarget, sizeof(artTarget), "/mtg/a%s.rgb", id);
-        std::snprintf(artBackup, sizeof(artBackup), "/mtg/a%s.bak", id);
+        if (parsed == mtg_protocol::ArtworkHeaderResult::WrongSize) {
+            ESP_LOGW("mtg", "Artwork byte count mismatch: received %u, expected %u",
+                     static_cast<unsigned>(header.bytes),
+                     static_cast<unsigned>(kArtworkBytes));
+            replyError("ART_SIZE"); return;
+        }
+        std::snprintf(artId, sizeof(artId), "%s", header.id);
+        std::snprintf(artStaging, sizeof(artStaging), "/mtg/a%s.tmp", artId);
+        std::snprintf(artTarget, sizeof(artTarget), "/mtg/a%s.rgb", artId);
+        std::snprintf(artBackup, sizeof(artBackup), "/mtg/a%s.bak", artId);
         transferKind = TransferKind::Artwork;
-        expectedBytes = size;
+        expectedBytes = header.bytes;
         receivedBytes = chunkRemaining = 0;
-        expectedCrc = static_cast<uint32_t>(std::strtoul(hex, nullptr, 16));
+        expectedCrc = header.crc;
         rollingCrc = 0xFFFFFFFFu;
         std::remove(artStaging);
         staging = std::fopen(artStaging, "wb");
