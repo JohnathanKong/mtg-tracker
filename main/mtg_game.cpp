@@ -12,6 +12,7 @@
 #include "mtg_rotary.h"
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -86,6 +87,7 @@ std::vector<DeckMeta> gDecks;
 std::vector<ActiveCounter> gTrackers;
 std::vector<ActiveCounter> gHiddenTrackers; // Preserve values while unchecked.
 std::vector<CounterDef> gAvailable;
+bool gAvailableDirty = true;
 int gActiveTracker = -1;
 constexpr int kMaxOpponents = 12;
 int gOpponentCount = 3;
@@ -220,7 +222,10 @@ void refreshCounterView() {
     gView.selectedTrackerCount = int(gTrackers.size());
     // Avoid building a new full editor catalog for every physical dial tick.
     if (gView.screen != MtgScreen::EditCounters) return;
-    refreshAvailable();
+    if (gAvailableDirty) {
+        refreshAvailable();
+        gAvailableDirty = false;
+    }
     // The list is laid out in physical pixels. Four rows fit; the fifth
     // is partially visible during a drag instead of jumping by whole rows.
     gView.editTotalRows = int(gAvailable.size());
@@ -392,7 +397,7 @@ void loadState(const std::string &id) {
     }
     gActiveTracker = -1;
     gView.page = 0;
-    gView.addPage = 0;
+    gView.editScrollPx = 0;
 }
 void publish() {
     refreshCounterView();
@@ -733,6 +738,7 @@ void tap(int x, int y) {
                                         std::max(0, int((gTrackers.size() + 1) / 2) - 1));
                 gDirty = true;
                 gLastChange = esp_timer_get_time();
+                gAvailableDirty = true;
                 publish();
             }
         }
@@ -767,6 +773,7 @@ void tap(int x, int y) {
         // The only way to edit the set of optional counters.
         gView.screen = MtgScreen::EditCounters;
         gView.editScrollPx = 0;
+        gAvailableDirty = true;
     } else if (y >= 259 && y <= 288) {
         int tile = -1;
         if (x >= 48 && x <= 156) tile = 0;
@@ -798,6 +805,15 @@ void task(void *) {
     int startX = 0, startY = 0;
     bool draggingCounterPages = false;
     int64_t lastDragDrawUs = 0;
+    bool draggingEdit = false;
+    int editStartScroll = 0;
+    int editPrevY = 0;
+    int64_t editPrevUs = 0;
+    int64_t editLastDrawUs = 0;
+    float editFingerVelocity = 0.0f; // Positive is scroll down the list
+    float editMomentumVelocity = 0.0f;
+    float editMomentumFraction = 0.0f;
+    int64_t editMomentumLastUs = 0;
     while (true) {
         if (gReloadPending.exchange(false)) {
             loadDecksFromFlash();
@@ -813,9 +829,52 @@ void task(void *) {
             startX = x; startY = y;
             holdTriggered = false;
             draggingCounterPages = false;
+            draggingEdit = false;
+            editMomentumVelocity = 0.0f;
+            editMomentumFraction = 0.0f;
+            editStartScroll = gView.editScrollPx;
+            editPrevY = y;
+            editPrevUs = touchStarted;
+            editFingerVelocity = 0.0f;
         }
         if (currentlyDown) {
             touchX = x; touchY = y;
+            // Edit Counters behaves like a web scroll container. The list
+            // follows the finger pixel-for-pixel, rather than selecting a
+            // different four-row page when the touch ends.
+            if (gView.screen == MtgScreen::EditCounters &&
+                startY >= mtg_scroll::kViewportTop &&
+                startY < mtg_scroll::kViewportBottom &&
+                startX >= 55 && startX <= 305) {
+                const int dx = x - startX;
+                const int dy = y - startY;
+                if (!draggingEdit && std::abs(dy) >= 7 &&
+                    std::abs(dy) > std::abs(dx)) {
+                    draggingEdit = true;
+                }
+                if (draggingEdit) {
+                    const int64_t now = esp_timer_get_time();
+                    const int deltaY = y - editPrevY;
+                    const int64_t dt = now - editPrevUs;
+                    if (dt >= 8000) {
+                        // Bound flick speed and smooth touch-sampling jitter.
+                        const float speed = std::clamp(
+                            -float(deltaY) * 1000000.0f / float(dt),
+                            -1400.0f, 1400.0f);
+                        editFingerVelocity = editFingerVelocity * 0.55f + speed * 0.45f;
+                        editPrevY = y;
+                        editPrevUs = now;
+                    }
+                    const int offset = mtg_scroll::clampScroll(
+                        editStartScroll - dy, int(gAvailable.size()));
+                    if (offset != gView.editScrollPx &&
+                        now - editLastDrawUs >= 24000) {
+                        gView.editScrollPx = offset;
+                        editLastDrawUs = now;
+                        publish();
+                    }
+                }
+            }
             // Horizontal swipes move the bottom counter carousel from most
             // of the dashboard, just like the prior gesture handler. Player
             // damage has its own swipe region; EDIT remains a tap target.
@@ -875,14 +934,21 @@ void task(void *) {
                 draggingCounterPages = false;
                 publish();
             } else if (gView.screen == MtgScreen::EditCounters) {
-                // Natural vertical scrolling: up reveals later entries.
-                // No horizontal pagination in this modal.
-                if (std::abs(dy) > 28 && std::abs(dy) > std::abs(dx))
-                    swipe(dy < 0 ? +std::max(1, std::abs(dy) / 45)
-                                 : -std::max(1, std::abs(dy) / 45),
-                          startY, true);
-                else if (std::abs(dx) < 28 && std::abs(dy) < 28)
-                    tap(touchX, touchY);
+                if (draggingEdit) {
+                    // Keep the final finger position, then gently decelerate.
+                    gView.editScrollPx = mtg_scroll::clampScroll(
+                        editStartScroll - dy, int(gAvailable.size()));
+                    publish();
+                    const int64_t now = esp_timer_get_time();
+                    editMomentumVelocity = now - editPrevUs > 95000 ?
+                        0.0f : std::clamp(editFingerVelocity, -1000.0f, 1000.0f);
+                    if (std::abs(editMomentumVelocity) < 90.0f)
+                        editMomentumVelocity = 0.0f;
+                    editMomentumLastUs = now;
+                    draggingEdit = false;
+                } else if (std::abs(dx) < 18 && std::abs(dy) < 18) {
+                    tap(touchX,touchY);
+                }
             } else if (std::abs(dx) > 42 &&
                        std::abs(dx) > std::abs(dy) * 13 / 10) {
                 swipe(dx < 0 ? +1 : -1, startY, false);
@@ -892,6 +958,34 @@ void task(void *) {
         }
         down = currentlyDown;
 
+        // Inertial vertical scrolling. No row-snapping, no pagination, and
+        // no blocking animation that would delay the rotary input handler.
+        if (!currentlyDown && editMomentumVelocity != 0.0f &&
+            gView.screen == MtgScreen::EditCounters) {
+            const int64_t now = esp_timer_get_time();
+            const float dt = std::clamp(float(now - editMomentumLastUs) *
+                                        0.000001f, 0.0f, 0.05f);
+            editMomentumLastUs = now;
+            editMomentumFraction += editMomentumVelocity * dt;
+            const int whole = int(editMomentumFraction);
+            editMomentumFraction -= float(whole);
+            if (whole != 0) {
+                const int next = mtg_scroll::clampScroll(
+                    gView.editScrollPx + whole, int(gAvailable.size()));
+                if (next != gView.editScrollPx &&
+                    now - editLastDrawUs >= 27000) {
+                    gView.editScrollPx = next;
+                    editLastDrawUs = now;
+                    publish();
+                }
+                if (next == 0 || next == mtg_scroll::maxScroll(int(gAvailable.size())))
+                    editMomentumVelocity = 0.0f;
+            }
+            // Exponential friction, independent of the game task tick rate.
+            editMomentumVelocity *= std::exp(-6.0f * dt);
+            if (std::abs(editMomentumVelocity) < 30.0f)
+                editMomentumVelocity = 0.0f;
+        }
         if (gDirty && esp_timer_get_time() - gLastChange >= 1500000)
             writeState();
         vTaskDelay(pdMS_TO_TICKS(10));
