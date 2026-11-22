@@ -68,7 +68,8 @@ const CounterDef kCatalog[] = {
     {"emblems", "Emblems"}, {"mana_pool", "Mana Pool"}, {"turn", "Turn"}
 };
 bool isPermanent(const std::string &id) {
-    return id == "life" || id == "commander_casts";
+    return id == "life" || id == "commander_casts" ||
+           id == "commander_damage";
 }
 std::string labelFor(const std::string &id) {
     for (const auto &item : kCatalog)
