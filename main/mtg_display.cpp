@@ -855,6 +855,44 @@ void drawNativeChrome(const MtgGameView &view) {
     drawNativeCircle();
 }
 
+// Draw the changing part of the Edit Counters screen without touching
+// its decorative frame, header, artwork or footer.
+void drawEditDynamic(const MtgGameView &view) {
+    char count[24];
+    std::snprintf(count,sizeof(count),"%d SELECTED",view.selectedTrackerCount);
+    atlasText({91,96,178,14},count,0,kMuted);
+    gCounterClip=true;
+    gClipLeft=55;gClipRight=305;gClipTop=110;gClipBottom=293;
+    for (int i=0;i<view.choiceCount;++i) {
+        const int y=110+i*46-view.editRowOffsetPx;
+        softCapsule(55,y,250,39,9,
+                    view.choices[i].checked?104:79,
+                    view.choices[i].checked?190:117,
+                    view.choices[i].checked?162:130);
+        drawCheckBox(69,y+10,view.choices[i].checked);
+        atlasText({101,y+7,186,25},view.choices[i].label,0,
+                  view.choices[i].checked?kIvory:kMuted);
+    }
+    gCounterClip=false;
+    softCapsule(309,110,4,184,2,64,67,67);
+    const int contentPx=std::max(184,view.editTotalRows*46);
+    const int thumbH=std::clamp(184*184/contentPx,23,184);
+    const int thumbY=110+(view.editMaxScrollPx>0?
+        view.editScrollPx*(184-thumbH)/view.editMaxScrollPx:0);
+    softCapsule(307,thumbY,8,thumbH,4,229,185,107);
+}
+
+// The fast path restores only 202 rows of the static menu background.
+// The rest of the framebuffer was already painted in the last frame, so
+// there is no need to recompose the whole round-screen artwork.
+void drawEditScrollOnly(const MtgGameView &view) {
+    if (!gEditBase) return;
+    for (int y=94;y<296;++y)
+        std::memcpy(gFrame+size_t(y)*360u,
+                    gEditBase+size_t(y)*360u,360u*2u);
+    drawEditDynamic(view);
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     bool reuse = gBackdrop && gBackdropValid &&
@@ -928,38 +966,8 @@ void drawDashboard(const MtgGameView &view) {
                 gEditBaseValid=true;
             }
         }
-        char count[24];
-        std::snprintf(count, sizeof(count), "%d SELECTED", view.selectedTrackerCount);
-        atlasText({91, 96, 178, 14}, count, 0, kMuted);
-
-        // Native scroll viewport: draw up to five intersecting rows, clipping
-        // all painted pixels to 110..293. The first and last rows can be
-        // partially visible while the finger drags the list.
-        gCounterClip = true;
-        gClipLeft = 55; gClipRight = 305;
-        gClipTop = 110; gClipBottom = 293;
-        for (int i = 0; i < view.choiceCount; ++i) {
-            const int y = 110 + i * 46 - view.editRowOffsetPx;
-            softCapsule(55, y, 250, 39, 9,
-                        view.choices[i].checked ? 104 : 79,
-                        view.choices[i].checked ? 190 : 117,
-                        view.choices[i].checked ? 162 : 130);
-            drawCheckBox(69, y + 10, view.choices[i].checked);
-            atlasText({101, y + 7, 186, 25},
-                      view.choices[i].label, 0,
-                      view.choices[i].checked ? kIvory : kMuted);
-        }
-        gCounterClip = false;
-
-        // Scrollbar thumb reflects actual pixel scroll, not the number of a
-        // page. When the selection fits, it occupies the complete track.
-        softCapsule(309, 110, 4, 184, 2, 64, 67, 67);
-        const int contentPx = std::max(184,view.editTotalRows*46);
-        const int thumbH = std::clamp(184*184/contentPx,23,184);
-        const int thumbY = 110 + (view.editMaxScrollPx > 0 ?
-            view.editScrollPx*(184-thumbH)/view.editMaxScrollPx : 0);
-        softCapsule(307, thumbY, 8, thumbH, 4, 229, 185, 107);
-        atlasText({136, 318, 88, 17}, "DONE", 0, kGold);
+        drawEditDynamic(view);
+        atlasText({136,318,88,17},"DONE",0,kGold);
         return;
     }
 
@@ -1438,7 +1446,15 @@ void displayTask(void *) {
                 gBottomAnimation = BottomAnimation::None;
             }
             gAnimationProgress = gBottomAnimation == BottomAnimation::None ? 1.0f : 0.0f;
-            if (snapshot.gameMode && snapshot.game.dragActive &&
+            if (snapshot.gameMode &&
+                snapshot.game.screen==MtgScreen::EditCounters &&
+                gEditBaseValid && gEditBase && hadFrame &&
+                previous.gameMode &&
+                previous.game.screen==MtgScreen::EditCounters &&
+                std::strcmp(previous.game.deckId,snapshot.game.deckId)==0 &&
+                previous.game.artworkRevision==snapshot.game.artworkRevision) {
+                drawEditScrollOnly(snapshot.game);
+            } else if (snapshot.gameMode && snapshot.game.dragActive &&
                 gBackdrop && hadFrame && previous.gameMode &&
                 previous.game.screen==MtgScreen::Dashboard &&
                 snapshot.game.screen==MtgScreen::Dashboard &&
