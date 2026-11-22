@@ -47,6 +47,7 @@ uint16_t *gBackdrop = nullptr;  // cached art + ornate chrome (speeds up dial up
 char gBackdropDeck[96]{};
 uint32_t gBackdropRevision = 0;
 int gBackdropOpponents[3]{-1, -1, -1};
+int gBackdropSelectedDamage = -1;
 bool gBackdropValid = false;
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
@@ -848,7 +849,8 @@ void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     bool reuse = gBackdrop && gBackdropValid &&
                  std::strcmp(gBackdropDeck, view.deckId) == 0 &&
-                 gBackdropRevision == view.artworkRevision;
+                 gBackdropRevision == view.artworkRevision &&
+                 gBackdropSelectedDamage == view.selectedDamage;
     for (int i = 0; i < 3; ++i)
         if (gBackdropOpponents[i] != view.damageIndices[i]) reuse = false;
     if (reuse) {
@@ -861,6 +863,7 @@ void drawDashboard(const MtgGameView &view) {
             std::memcpy(gBackdrop, gFrame, 360u * 360u * 2u);
             std::snprintf(gBackdropDeck, sizeof(gBackdropDeck), "%s", view.deckId);
             gBackdropRevision = view.artworkRevision;
+            gBackdropSelectedDamage = view.selectedDamage;
             for (int i = 0; i < 3; ++i)
                 gBackdropOpponents[i] = view.damageIndices[i];
             gBackdropValid = true;
