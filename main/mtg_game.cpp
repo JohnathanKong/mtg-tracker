@@ -146,19 +146,20 @@ bool alreadyActive(const std::string &id) {
 }
 void refreshAvailable() {
     gAvailable.clear();
-    // Active trackers first, then everything else. Each option has one row
-    // whether or not it is currently shown on the dashboard.
+    // Keep the list in a stable order when checking and unchecking entries.
+    // Moving options after each tap would make the touchscreen frustrating.
     auto append = [&](const std::string &id, const std::string &label) {
         if (isPermanent(id)) return;
         for (const CounterDef &existing : gAvailable)
             if (existing.id == id) return;
         gAvailable.push_back({id, label});
     };
-    for (const auto &active : gTrackers) append(active.id, active.label);
     for (const auto &entry : kCatalog) append(entry.id, entry.label);
     if (gActiveDeckIndex >= 0 && gActiveDeckIndex < int(gDecks.size()))
         for (const auto &entry : gDecks[size_t(gActiveDeckIndex)].custom)
             append(entry.id, entry.label);
+    // Preserve any older synced custom trackers no longer in the catalog.
+    for (const auto &active : gTrackers) append(active.id, active.label);
 }
 
 void refreshCounterView() {
