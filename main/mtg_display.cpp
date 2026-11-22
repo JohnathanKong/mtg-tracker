@@ -518,7 +518,7 @@ void aaText(TextRect rect, const char *text, const GFXfont &font,
             int desiredHeight, uint16_t ink) {
     const FontExtents ext = getFontExtents(font, text);
     if (!ext.visible || rect.w <= 0 || rect.h <= 0) return;
-    const float scale = std::min({1.0f, float(desiredHeight) / float(ext.height()),
+    const float scale = std::min({0.90f, float(desiredHeight) / float(ext.height()),
                                    float(rect.h) / float(ext.height()),
                                    float(rect.w) / float(ext.width())});
     if (scale <= 0.0f) return;
