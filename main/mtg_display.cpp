@@ -633,6 +633,72 @@ void aaText(TextRect rect, const char *text, const GFXfont &font,
     }
 }
 
+const AaGlyph *glyphForAa(const AaFace &font, unsigned char c) {
+    for (unsigned i = 0; i < font.count; ++i)
+        if (font.glyph[i].character == c) return &font.glyph[i];
+    return nullptr;
+}
+void atlasText(TextRect rect, const char *text, int fontSize,
+               uint16_t ink) {
+    if (!gFontRaw) {
+        aaText(rect, text, fontSize == 2 ? FreeSerif24pt7b : FreeSans18pt7b,
+               fontSize == 2 ? 44 : fontSize == 1 ? 20 : 11, ink);
+        return;
+    }
+    const AaFace &face = gAaFaces[std::clamp(fontSize, 0, 2)];
+    int pen = 0, minX = 0, maxX = 0, minY = 0, maxY = 0;
+    bool hasGlyphs = false;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
+         *p; ++p) {
+        const unsigned char ch = static_cast<unsigned char>(
+            std::toupper(static_cast<unsigned char>(*p)));
+        const AaGlyph *g = glyphForAa(face, ch);
+        if (!g) continue;
+        if (g->width && g->height) {
+            minX = hasGlyphs ? std::min(minX, pen + int(g->xBearing)) : pen + int(g->xBearing);
+            maxX = std::max(maxX, pen + int(g->xBearing) + int(g->width));
+            minY = hasGlyphs ? std::min(minY, int(g->yBearing)) : int(g->yBearing);
+            maxY = std::max(maxY, int(g->yBearing) + int(g->height));
+            hasGlyphs = true;
+        }
+        pen += g->advance;
+    }
+    if (!hasGlyphs) return;
+    if ((maxX - minX > rect.w || maxY - minY > rect.h) && fontSize > 0) {
+        atlasText(rect, text, fontSize - 1, ink);
+        return;
+    }
+    const int x0 = rect.x + (rect.w - (maxX - minX)) / 2 - minX;
+    const int baseline = rect.y + (rect.h - (maxY - minY)) / 2 - minY;
+    const uint16_t rgb = uint16_t((ink >> 8) | (ink << 8));
+    const uint8_t red = uint8_t(((rgb >> 11) & 31u) * 255u / 31u);
+    const uint8_t green = uint8_t(((rgb >> 5) & 63u) * 255u / 63u);
+    const uint8_t blue = uint8_t((rgb & 31u) * 255u / 31u);
+    pen = 0;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(text);
+         *p; ++p) {
+        const unsigned char ch = static_cast<unsigned char>(
+            std::toupper(static_cast<unsigned char>(*p)));
+        const AaGlyph *g = glyphForAa(face, ch);
+        if (!g) continue;
+        for (int gy = 0; gy < g->height; ++gy) {
+            for (int gx = 0; gx < g->width; ++gx) {
+                const size_t off = size_t(gy) * size_t(g->width) + size_t(gx);
+                const uint8_t packed = g->bitmap[off >> 1];
+                const int opacity = int((off & 1) ? (packed & 15u) : (packed >> 4)) * 17;
+                if (opacity) {
+                    const int px = x0 + pen + g->xBearing + gx;
+                    const int py = baseline + g->yBearing + gy;
+                    if (px >= rect.x && px < rect.x + rect.w &&
+                        py >= rect.y && py < rect.y + rect.h)
+                        blendInk(px, py, red, green, blue, opacity);
+                }
+            }
+        }
+        pen += g->advance;
+    }
+}
+
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     drawHeroArt();
