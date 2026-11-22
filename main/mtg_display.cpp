@@ -41,6 +41,12 @@ esp_lcd_panel_handle_t gPanel = nullptr;
 SemaphoreHandle_t gTransferDone = nullptr;
 TaskHandle_t gDisplayTask = nullptr;
 uint16_t *gFrame = nullptr;     // 360x360 RGB565 in PSRAM
+uint16_t *gBackdrop = nullptr;  // cached art + ornate chrome (speeds up dial updates)
+char gBackdropDeck[96]{};
+uint32_t gBackdropRevision = 0;
+int gBackdropTiles = -1;
+int gBackdropOpponents[3]{-1, -1, -1};
+bool gBackdropValid = false;
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
 uint8_t *gSkin = nullptr;      // 4-bit packed 360x360 antialiased ornate chrome overlay
@@ -704,8 +710,27 @@ void atlasText(TextRect rect, const char *text, int fontSize,
 
 void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
-    drawHeroArt();
-    applyOrnateSkin(view);
+    bool reuse = gBackdrop && gBackdropValid &&
+                 std::strcmp(gBackdropDeck, view.deckId) == 0 &&
+                 gBackdropRevision == view.artworkRevision &&
+                 gBackdropTiles == view.tileCount;
+    for (int i = 0; i < 3; ++i)
+        if (gBackdropOpponents[i] != view.damageIndices[i]) reuse = false;
+    if (reuse) {
+        std::memcpy(gFrame, gBackdrop, 360u * 360u * 2u);
+    } else {
+        drawHeroArt();
+        applyOrnateSkin(view);
+        if (gBackdrop) {
+            std::memcpy(gBackdrop, gFrame, 360u * 360u * 2u);
+            std::snprintf(gBackdropDeck, sizeof(gBackdropDeck), "%s", view.deckId);
+            gBackdropRevision = view.artworkRevision;
+            gBackdropTiles = view.tileCount;
+            for (int i = 0; i < 3; ++i)
+                gBackdropOpponents[i] = view.damageIndices[i];
+            gBackdropValid = true;
+        }
+    }
 
     if (view.deckCount == 0) {
         chromePanel(58, 132, 244, 103, 16, kGold, kSurface);
@@ -947,6 +972,8 @@ bool initDisplayHardware() {
     gDmaStrip = static_cast<uint16_t *>(heap_caps_malloc(
         kWidth * kRowsPerTransfer * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     gFrame = static_cast<uint16_t *>(heap_caps_malloc(
+        kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    gBackdrop = static_cast<uint16_t *>(heap_caps_malloc(
         kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gArt = static_cast<uint16_t *>(heap_caps_malloc(
         360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
