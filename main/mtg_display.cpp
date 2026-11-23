@@ -270,42 +270,41 @@ void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha)
                       unsigned((green * alpha + g * (255 - alpha) + 127) / 255),
                       unsigned((blue * alpha + b * (255 - alpha) + 127) / 255)));
 }
+// Restore the *original painted gold and dark-glass chrome*. Earlier versions
+// blanked whole rectangular areas to erase sample text, accidentally removing
+// the Life crest, player-box edges and outer ring. Preserve intact ornament
+// while re-rendering only the damaged shapes and the editable tile row.
+// The dragon is NEVER baked in: user-synced commander artwork remains behind
+// the chrome, and the upper artwork area is transparent.
 void applyOrnateSkin(const MtgGameView &/*view*/) {
     if (!gSkin) return;
-    for (int y = 0; y < 360; ++y) {
-        for (int x = 0; x < 360; ++x) {
-            // Preserve the original painted filigree and glowing flourishes.
-            // Mask only the defective screenshot-extracted Life / player / tile
-            // outlines, so their complete dynamic shapes can be drawn on top.
-            // This restores visual depth without resurrecting broken borders.
-            const int dx = x-180, dy = y-180;
-            const bool topOrnament = y < 96;
-            const bool shoulderOrnament = y >= 96 && y < 197 &&
-                                          (x < 89 || x > 271);
-            const bool footerOrnament = y >= 315 && y <= 341 &&
-                                        x >= 63 && x <= 297;
-            if ((!topOrnament && !shoulderOrnament && !footerOrnament) ||
-                dx*dx + dy*dy >= 165*165) continue;
-            const size_t off = size_t(y) * 360u + size_t(x);
-            const uint8_t index = gSkin[off * 2u];
-            const uint8_t alpha = gSkin[off * 2u + 1u];
+    for (int y = 145; y < 347; ++y) {
+        for (int x = 8; x < 352; ++x) {
+            const int dx = x - 180, dy = y - 180;
+            // One native ring is drawn at the end; do not duplicate the
+            // interrupted ring supplied with the older flattened asset.
+            if (dx * dx + dy * dy >= 167 * 167) continue;
+
+            // The source lower row contained two *oversized* baked capsules,
+            // which conflict with today's compact two-counter + pencil row.
+            // The new capsules are textured independently and only appear
+            // when that tracker is enabled.
+            if (y >= 251 && y <= 293) continue;
+
+            // Rebuild the pagination dots from game state, not an image.
+            if (y >= 298 && y <= 315 && x >= 148 && x <= 211) continue;
+
+            // Top band can contain the old sample commander artwork. The
+            // ornate CASTS/TAX rail begins at about y=151; keep that rail
+            // but never show the baked image above it.
+            if (y < 153 && (x < 28 || x > 332)) continue;
+
+            const size_t offset = size_t(y) * 360u + size_t(x);
+            const uint8_t index = gSkin[offset * 2u];
+            const uint8_t alpha = gSkin[offset * 2u + 1u];
             if (!alpha) continue;
             const uint8_t *rgb = skin_start + size_t(index) * 3u;
-            // At native 360px, the original mockup's delicate gold strokes
-            // sometimes fade below a single RGB565 intensity step. Enhance
-            // gold contrast slightly without thresholding away edge alpha.
-            const bool gilded = rgb[0] > 115 && rgb[1] > 72 &&
-                                 int(rgb[0]) * 10 > int(rgb[1]) * 11 &&
-                                 rgb[2] < rgb[0];
-            if (gilded) {
-                const int opacity = std::min(255, int(alpha) * 115 / 100);
-                blendInk(x, y, uint8_t(std::min(255, int(rgb[0]) * 108 / 100)),
-                         uint8_t(std::min(255, int(rgb[1]) * 111 / 100)),
-                         uint8_t(std::min(255, int(rgb[2]) * 105 / 100)),
-                         opacity);
-            } else {
-                blendInk(x, y, rgb[0], rgb[1], rgb[2], alpha);
-            }
+            blendInk(x, y, rgb[0], rgb[1], rgb[2], alpha);
         }
     }
 }
