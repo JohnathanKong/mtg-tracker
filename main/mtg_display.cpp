@@ -899,7 +899,7 @@ void drawDashboard(const MtgGameView &view) {
             }
         }
         drawEditDynamic(view);
-        atlasText({136,318,88,17},"DONE",0,kGold);
+        atlasText({136,297,88,17},"DONE",0,kGold);
         return;
     }
 
