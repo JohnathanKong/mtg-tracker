@@ -278,33 +278,21 @@ void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha)
 // the chrome, and the upper artwork area is transparent.
 void applyOrnateSkin(const MtgGameView &/*view*/) {
     if (!gSkin) return;
-    for (int y = 145; y < 347; ++y) {
+    for (int y = 98; y < 347; ++y) {
         for (int x = 8; x < 352; ++x) {
             const int dx = x - 180, dy = y - 180;
             // One native ring is drawn at the end; do not duplicate the
             // interrupted ring supplied with the older flattened asset.
-            if (dx * dx + dy * dy >= 167 * 167) continue;
+            if (dx * dx + dy * dy >= 162 * 162) continue;
 
-            // The old lower row had two oversized capsule outlines. Their
-            // right-hand borders would stick out behind today's smaller tiles.
-            // Instead use the untouched deep-teal textured footer as an
-            // underlay; the two restored painted capsules are overlaid only
-            // when enabled. No rectangular eraser with hard seam.
+            // The original asset contains large counter capsules here.
+            // A single feathered emerald-glass background hides those old
+            // controls without copying the footer's gold flourishes a second
+            // time. The compact painted counter capsules are separate layers.
             if (y >= 251 && y <= 293) {
-                const int sourceY=328+(y-251)*14/42;
-                const size_t source=(size_t(sourceY)*360u+size_t(x))*2u;
-                const uint8_t alpha=gSkin[source+1u];
-                if(alpha) {
-                    const uint8_t *rgb=skin_start+size_t(gSkin[source])*3u;
-                    // Reuse the subtle mottled dark teal texture, but NOT
-                    // footer's curved gold strokes: those stay exclusively
-                    // in the footer where they belong.
-                    const bool gold=rgb[0]>100 && rgb[0]>int(rgb[1])*11/10 &&
-                                    rgb[1]>60;
-                    blendInk(x,y,
-                             gold?8:rgb[0],gold?31:rgb[1],gold?33:rgb[2],
-                             std::min(205,int(alpha)));
-                }
+                const int edge = std::min(y - 251, 293 - y);
+                const int alpha = 190 * std::clamp(edge, 0, 5) / 5;
+                blendInk(x, y, 7, 27, 28, alpha);
                 continue;
             }
 
@@ -878,38 +866,6 @@ void drawNativeCircle() {
 // Paint only the deep emerald glass silhouette *before* the original art
 // layer is composited. Its lower half gracefully tapers beneath the
 // CASTS/TAX rail; there is no rectangular cutoff across the gold border.
-void paintCrestBase() {
-    constexpr float kHalfPi=1.57079632679f;
-    for(int y=100;y<=187;++y) {
-        float halfWidth;
-        if(y<=155) {
-            const float t=float(y-100)/55.0f;
-            halfWidth=79.0f*std::sqrt(t);
-        } else {
-            const float t=std::clamp(float(187-y)/32.0f,0.0f,1.0f);
-            halfWidth=79.0f*std::sin(t*kHalfPi);
-        }
-        if(halfWidth<0.5f) continue;
-        const float left=180.0f-halfWidth,right=180.0f+halfWidth;
-        for(int x=std::max(0,int(left)-1);
-            x<=std::min(359,int(right)+1);++x) {
-            const float d=std::min(float(x)-left,right-float(x));
-            if(d<=-1.0f)continue;
-            const float cov=std::clamp(d+0.75f,0.0f,1.0f);
-            const float glow=1.0f-std::fabs(float(y)-145.0f)/75.0f;
-            blendInk(x,y,5,uint8_t(24+int(13.0f*std::max(0.0f,glow))),
-                     31,int(247.0f*cov));
-        }
-    }
-}
-void repairLifeCrest() {
-    // Three continuous gilded Bezier strokes converge at a curved apex.
-    // The point at the top replaces the cropped horizontal Life rectangle.
-    drawBezier(103,152,113,126,138,102,180,99,2.0f,234,178,92);
-    drawBezier(180,99,222,102,247,126,257,152,2.0f,234,178,92);
-    drawBezier(107,154,120,155,131,158,140,166,0.9f,122,137,99);
-    drawBezier(253,154,240,155,229,158,220,166,0.9f,122,137,99);
-}
 
 void repairPlayerPlaque(int x,int y,int w,int h,bool selected) {
     // Antialiased rounded edge ONLY: leave the glossy wine-coloured
@@ -923,21 +879,21 @@ void repairPlayerPlaque(int x,int y,int w,int h,bool selected) {
         const float dist=std::sqrt(dx*dx+dy*dy)+
                           std::min(std::max(qx,qy),0.0f)-r;
         const float stroke=std::clamp(1.10f-std::fabs(dist+0.55f),0.0f,1.0f);
-        if(stroke>0.0f) {
+        // The source already has the complete left and bottom gilding.
+        // Only the top/right were erased with the old sample values.
+        // Selected opponents may add a separate thin teal highlight.
+        const bool missingEdge = py <= 3 || px >= w - 13;
+        if (stroke>0.0f && (selected || missingEdge)) {
             const bool top=py<h/2;
             blendInk(x+px,y+py,
                      selected?143:(top?245:202),
                      selected?239:(top?196:126),
                      selected?198:(top?133:83),
-                     int(stroke*245.0f));
+                     int(stroke*(selected ? 183.0f : 218.0f)));
         }
     }
 }
 void drawNativeChrome(const MtgGameView &view) {
-    // Repaired crest over the real image, plus the original filigree
-    // underneath. No duplicate box/bar artwork or baked example numbers.
-    repairLifeCrest();
-
     // The original red masks erased the top/right edges of opponent plaques.
     // Restore complete closed outlines, leaving original textured interiors.
     const int x[3]={72,145,218};
@@ -1006,7 +962,6 @@ void drawDashboard(const MtgGameView &view) {
     } else {
         gEditBaseValid = false;
         drawHeroArt();
-        paintCrestBase();
         applyOrnateSkin(view);
         drawNativeChrome(view);
         if (gBackdrop) {
