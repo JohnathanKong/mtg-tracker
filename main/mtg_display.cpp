@@ -68,6 +68,10 @@ extern "C" const uint8_t tealSelectedAsset[] asm("_binary_generated_counter_teal
 extern "C" const uint8_t brassSelectedAsset[] asm("_binary_generated_counter_brass_selected_rgba_start");
 extern "C" const uint8_t pencilAsset[] asm("_binary_generated_pencil_rgba_start");
 extern "C" const uint8_t editorAsset[] asm("_binary_generated_editor_rgba_start");
+extern "C" const uint8_t editorRowChecked[] asm("_binary_generated_editor_row_checked_rgba_start");
+extern "C" const uint8_t editorRowUnchecked[] asm("_binary_generated_editor_row_unchecked_rgba_start");
+extern "C" const uint8_t checkboxChecked[] asm("_binary_generated_checkbox_checked_rgba_start");
+extern "C" const uint8_t checkboxUnchecked[] asm("_binary_generated_checkbox_unchecked_rgba_start");
 extern "C" const uint8_t font_start[] asm("_binary_ui_font_atlas_lz4_start");
 extern "C" const uint8_t font_end[] asm("_binary_ui_font_atlas_lz4_end");
 
@@ -111,6 +115,7 @@ constexpr uint16_t kRed      = color(238, 140, 131);
 constexpr uint16_t kTrack    = color(53, 69, 81);
 
 inline void pixel(int x, int y, uint16_t ink);
+void assetBlit(const uint8_t *rgba,int x,int y,int w,int h);
 
 
 
@@ -610,22 +615,10 @@ void softCapsule(int x, int y, int w, int h, int radius,
         }
     }
 }
-void drawCheckBox(int x, int y, bool checked) {
-    softCapsule(x, y, 20, 20, 5,
-                checked ? 104 : 114, checked ? 230 : 119,
-                checked ? 196 : 117, checked);
-    if (checked) {
-        // Distinct, non-touch-adjusting check mark.
-        for (int t = 0; t < 7; ++t) {
-            blendInk(x + 4 + t, y + 10 + t / 2, 189, 253, 228, 255);
-            blendInk(x + 4 + t, y + 11 + t / 2, 189, 253, 228, 200);
-        }
-        for (int t = 0; t < 9; ++t) {
-            blendInk(x + 10 + t, y + 13 - t, 189, 253, 228, 255);
-            blendInk(x + 10 + t, y + 14 - t, 189, 253, 228, 200);
-        }
-    }
+void drawCheckBox(int x,int y,bool checked) {
+    assetBlit(checked ? checkboxChecked : checkboxUnchecked,x,y,20,20);
 }
+
 enum class BottomAnimation : uint8_t { None, Slide, Pulse, SnapBack };
 BottomAnimation gBottomAnimation = BottomAnimation::None;
 int64_t gAnimationStartedUs = 0;
@@ -794,10 +787,8 @@ void drawEditDynamic(const MtgGameView &view) {
     gClipLeft=55;gClipRight=305;gClipTop=110;gClipBottom=293;
     for (int i=0;i<view.choiceCount;++i) {
         const int y=110+i*46-view.editRowOffsetPx;
-        softCapsule(55,y,250,39,9,
-                    view.choices[i].checked?104:79,
-                    view.choices[i].checked?190:117,
-                    view.choices[i].checked?162:130);
+        assetBlit(view.choices[i].checked ?
+                  editorRowChecked : editorRowUnchecked,55,y,250,39);
         drawCheckBox(69,y+10,view.choices[i].checked);
         atlasText({101,y+7,186,25},view.choices[i].label,0,
                   view.choices[i].checked?kIvory:kMuted);
