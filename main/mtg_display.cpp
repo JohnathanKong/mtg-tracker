@@ -296,7 +296,13 @@ void applyOrnateSkin(const MtgGameView &/*view*/) {
                 const uint8_t alpha=gSkin[source+1u];
                 if(alpha) {
                     const uint8_t *rgb=skin_start+size_t(gSkin[source])*3u;
-                    blendInk(x,y,rgb[0],rgb[1],rgb[2],
+                    // Reuse the subtle mottled dark teal texture, but NOT
+                    // footer's curved gold strokes: those stay exclusively
+                    // in the footer where they belong.
+                    const bool gold=rgb[0]>100 && rgb[0]>int(rgb[1])*11/10 &&
+                                    rgb[1]>60;
+                    blendInk(x,y,
+                             gold?8:rgb[0],gold?31:rgb[1],gold?33:rgb[2],
                              std::min(205,int(alpha)));
                 }
                 continue;
