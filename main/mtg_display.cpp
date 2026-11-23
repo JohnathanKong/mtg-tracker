@@ -53,17 +53,21 @@ int gBackdropOpponents[3]{-1, -1, -1};
 bool gBackdropValid = false;
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
-uint8_t *gSkin = nullptr;      // 4-bit packed 360x360 antialiased ornate chrome overlay
-struct CachedChromePixel { uint8_t red,green,blue,alpha; };
-constexpr int kCounterFramePixels=106*25;
-CachedChromePixel *gCounterChrome=nullptr; // two prefiltered capsule images
 uint8_t *gFontRaw = nullptr;    // unpacked 4-bit AA glyph atlas, PSRAM
 bool gAaReady = false;
 char gLoadedArtId[96] = {};
 uint32_t gLoadedArtRevision = 0;
 bool gHasArt = false;
-extern "C" const uint8_t skin_start[] asm("_binary_ui_reference_chrome_256_lz4_start");
-extern "C" const uint8_t skin_end[] asm("_binary_ui_reference_chrome_256_lz4_end");
+// All transparent assets are generated once at native display dimensions.
+extern "C" const uint8_t hudAsset[] asm("_binary_generated_hud_chrome_rgba_start");
+extern "C" const uint8_t playerAsset[] asm("_binary_generated_player_normal_rgba_start");
+extern "C" const uint8_t playerSelectedAsset[] asm("_binary_generated_player_selected_rgba_start");
+extern "C" const uint8_t tealAsset[] asm("_binary_generated_counter_teal_rgba_start");
+extern "C" const uint8_t brassAsset[] asm("_binary_generated_counter_brass_rgba_start");
+extern "C" const uint8_t tealSelectedAsset[] asm("_binary_generated_counter_teal_selected_rgba_start");
+extern "C" const uint8_t brassSelectedAsset[] asm("_binary_generated_counter_brass_selected_rgba_start");
+extern "C" const uint8_t pencilAsset[] asm("_binary_generated_pencil_rgba_start");
+extern "C" const uint8_t editorAsset[] asm("_binary_generated_editor_rgba_start");
 extern "C" const uint8_t font_start[] asm("_binary_ui_font_atlas_lz4_start");
 extern "C" const uint8_t font_end[] asm("_binary_ui_font_atlas_lz4_end");
 
@@ -108,9 +112,6 @@ constexpr uint16_t kTrack    = color(53, 69, 81);
 
 inline void pixel(int x, int y, uint16_t ink);
 
-// Asset: 360x360 antialiased 32-color RGBA palette and LZ4 pixels.
-// Chrome and decoration contain no baked-in commander art or changing values.
-constexpr size_t kPaletteByteSize = 256 * 3;
 
 
 // Small bounds-checked LZ4 block decoder, no host/image runtime dependencies.
@@ -159,11 +160,6 @@ bool decodeLz4(const uint8_t *src, const uint8_t *end,
         out += match;
     }
     return out == outEnd;
-}
-
-bool decodeSkin() {
-    return gSkin && size_t(skin_end - skin_start) > kPaletteByteSize &&
-           decodeLz4(skin_start + kPaletteByteSize, skin_end, gSkin, 360u * 360u * 2u);
 }
 
 // Noto Serif Display glyphs were rasterized with FreeType at 4x resolution,
@@ -279,44 +275,6 @@ void blendInk(int x, int y, uint8_t red, uint8_t green, uint8_t blue, int alpha)
 // while re-rendering only the damaged shapes and the editable tile row.
 // The dragon is NEVER baked in: user-synced commander artwork remains behind
 // the chrome, and the upper artwork area is transparent.
-void applyOrnateSkin(const MtgGameView &/*view*/) {
-    if (!gSkin) return;
-    for (int y = 98; y < 347; ++y) {
-        for (int x = 8; x < 352; ++x) {
-            const int dx = x - 180, dy = y - 180;
-            // One native ring is drawn at the end; do not duplicate the
-            // interrupted ring supplied with the older flattened asset.
-            if (dx * dx + dy * dy >= 162 * 162) continue;
-
-            // The original asset contains large counter capsules here.
-            // A single feathered emerald-glass background hides those old
-            // controls without copying the footer's gold flourishes a second
-            // time. The compact painted counter capsules are separate layers.
-            if (y >= 251 && y <= 293) {
-                const int edge = std::min(y - 251, 293 - y);
-                const int alpha = 190 * std::clamp(edge, 0, 5) / 5;
-                blendInk(x, y, 7, 27, 28, alpha);
-                continue;
-            }
-
-            // Rebuild the pagination dots from game state, not an image.
-            if (y >= 298 && y <= 315 && x >= 148 && x <= 211) continue;
-
-            // Top band can contain the old sample commander artwork. The
-            // ornate CASTS/TAX rail begins at about y=151; keep that rail
-            // but never show the baked image above it.
-            if (y < 153 && (x < 28 || x > 332)) continue;
-
-            const size_t offset = size_t(y) * 360u + size_t(x);
-            const uint8_t index = gSkin[offset * 2u];
-            const uint8_t alpha = gSkin[offset * 2u + 1u];
-            if (!alpha) continue;
-            const uint8_t *rgb = skin_start + size_t(index) * 3u;
-            blendInk(x, y, rgb[0], rgb[1], rgb[2], alpha);
-        }
-    }
-}
-
 struct Glyph { char c; uint8_t rows[7]; };
 // Original minimal 5x7 status font. Uppercase letters, digits and punctuation.
 constexpr Glyph kFont[] = {
@@ -769,75 +727,28 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
 // smaller size is resampled with bilinear premultiplied-alpha filtering.
 // During finger movement we composite only the cached 106x25 pixels, avoiding
 // per-frame palette lookups and preserving the web-like carousel response.
-void prepareCounterChrome() {
-    if(!gSkin)return;
-    gCounterChrome=static_cast<CachedChromePixel*>(heap_caps_malloc(
-        2u*kCounterFramePixels*sizeof(CachedChromePixel),
-        MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
-    if(!gCounterChrome) {
-        ESP_LOGW(kTag,"No PSRAM for prefiltered counter frames");
-        return;
-    }
-    for(int slot=0;slot<2;++slot) {
-        const int left=slot==0?50:182;
-        const int right=slot==0?177:307;
-        for(int yy=0;yy<25;++yy) {
-            const int ty=yy*29*256/24;
-            const int sy=258+(ty>>8),fy=ty&255;
-            for(int xx=0;xx<106;++xx) {
-                const int tx=xx*(right-left)*256/105;
-                const int sx=left+(tx>>8),fx=tx&255;
-                const int x1=std::min(sx+1,right);
-                const int y1=std::min(sy+1,287);
-                const unsigned weight[4]={
-                    unsigned((256-fx)*(256-fy)),
-                    unsigned(fx*(256-fy)),
-                    unsigned((256-fx)*fy),
-                    unsigned(fx*fy)
-                };
-                const int pixelX[4]={sx,x1,sx,x1};
-                const int pixelY[4]={sy,sy,y1,y1};
-                uint64_t red=0,green=0,blue=0;
-                uint32_t total=0;
-                for(int sample=0;sample<4;++sample) {
-                    const size_t pos=(size_t(pixelY[sample])*360u+
-                                      size_t(pixelX[sample]))*2u;
-                    const uint32_t opacity=gSkin[pos+1];
-                    if(!opacity)continue;
-                    const uint32_t contribution=weight[sample]*opacity;
-                    const uint8_t*rgb=skin_start+size_t(gSkin[pos])*3u;
-                    total+=contribution;
-                    red+=uint64_t(contribution)*rgb[0];
-                    green+=uint64_t(contribution)*rgb[1];
-                    blue+=uint64_t(contribution)*rgb[2];
-                }
-                CachedChromePixel &target=gCounterChrome[
-                    slot*kCounterFramePixels+yy*106+xx];
-                target={0,0,0,0};
-                if(total) {
-                    target.red=uint8_t(red/total);
-                    target.green=uint8_t(green/total);
-                    target.blue=uint8_t(blue/total);
-                    target.alpha=uint8_t(std::min<uint32_t>(255u,
-                        (total+32768u)>>16u));
-                }
-            }
+// This blit is the only renderer for decorative pieces. The assets contain
+// no values or fonts and were generated at their final sizes (zero scaling).
+// gCounterClip remains active during touch-following carousel transitions.
+void assetBlit(const uint8_t *rgba,int x,int y,int w,int h) {
+    for (int py=0;py<h;++py) {
+        const int sy=y+py;
+        if (sy<0||sy>=kHeight) continue;
+        for(int px=0;px<w;++px) {
+            const int sx=x+px;
+            if(sx<0||sx>=kWidth)continue;
+            const size_t pos=(size_t(py)*size_t(w)+size_t(px))*4u;
+            const uint8_t alpha=rgba[pos+3];
+            if(alpha)
+                blendInk(sx,sy,rgba[pos],rgba[pos+1],rgba[pos+2],alpha);
         }
     }
 }
-void drawPaintedCounterFrame(int x,int y,int slot) {
-    if(!gCounterChrome) {
-        softCapsule(x,y,106,25,12,
-                    slot==0?81:221,slot==0?180:170,slot==0?170:91);
-        return;
-    }
-    const CachedChromePixel *frame=gCounterChrome+
-                                   slot*kCounterFramePixels;
-    for(int yy=0;yy<25;++yy)
-        for(int xx=0;xx<106;++xx) {
-            const CachedChromePixel &p=frame[yy*106+xx];
-            if(p.alpha)blendInk(x+xx,y+yy,p.red,p.green,p.blue,p.alpha);
-        }
+void drawPaintedCounterFrame(int x,int y,int slot,bool selected) {
+    const uint8_t *const bitmap=slot==0 ?
+       (selected?tealSelectedAsset:tealAsset):
+       (selected?brassSelectedAsset:brassAsset);
+    assetBlit(bitmap,x,y,106,25);
 }
 
 void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
@@ -845,7 +756,7 @@ void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
     // A short gold/teal highlight on selection or value changes.
     const int glow = gBottomAnimation == BottomAnimation::Pulse &&
                      gAnimatedTile == index ? int(68.0f * (1.0f-p)) : 0;
-    drawPaintedCounterFrame(x,y,index);
+    drawPaintedCounterFrame(x,y,index,tile.selected);
     if (tile.selected || glow) {
         // Small jewel-like selection glint, without covering the painted
         // texture with an opaque rectangle.
@@ -863,18 +774,8 @@ void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
               tile.selected ? kTeal : kIvory);
 }
 void drawEditCounterButton() {
-    // Clearly recognizable pencil editing a square; inset from the rim.
-    softCapsule(mtg_ui::kEditButton.x,mtg_ui::kEditButton.y,
-                mtg_ui::kEditButton.w,mtg_ui::kEditButton.h,
-                12,236,193,100);
-    softStroke(283,267,283,278,1.5f,232,194,118);
-    softStroke(283,278,296,278,1.5f,232,194,118);
-    softStroke(296,278,296,273,1.5f,232,194,118);
-    softStroke(288,272,297,263,2.1f,254,228,162);
-    softStroke(291,275,300,266,2.1f,254,228,162);
-    softStroke(297,263,300,266,2.1f,254,228,162);
-    softStroke(288,272,287,278,1.9f,254,228,162);
-    softStroke(287,278,291,275,1.9f,254,228,162);
+    assetBlit(pencilAsset,mtg_ui::kEditButton.x,mtg_ui::kEditButton.y,
+              mtg_ui::kEditButton.w,mtg_ui::kEditButton.h);
 }
 
 
@@ -882,74 +783,6 @@ void drawEditCounterButton() {
 // photograph and erased numbers with rectangular patches, cutting Life,
 // opponent and circular borders. These components have complete geometry and
 // are independently composited over the deck artwork.
-
-void drawNativeCircle() {
-    // A SINGLE continuously sampled rim. Metallic two-tone reflections
-    // are computed from the same circle; they cannot split into separately
-    // positioned top/bottom bitmap pieces.
-    for (int y=5;y<355;++y) for (int x=5;x<355;++x) {
-        const float dx=float(x)-180.0f,dy=float(y)-180.0f;
-        const float r2=dx*dx+dy*dy;
-        // Avoid an expensive square root over the entire display.
-        if (r2<166.0f*166.0f || r2>175.0f*175.0f) continue;
-        const float d=std::sqrt(r2);
-        const float main=std::clamp(1.20f-std::fabs(d-171.75f),0.0f,1.0f);
-        const float inner=std::clamp(0.75f-std::fabs(d-168.9f),0.0f,1.0f);
-        // Same polished-gold palette as the clean artwork reference:
-        // pale champagne across the upper arc; antique gold below.
-        const float top=std::clamp((230.0f-float(y))/185.0f,0.0f,1.0f);
-        if (inner>0)
-            blendInk(x,y,164,119,66,int(inner*145.0f));
-        if (main>0)
-            blendInk(x,y,uint8_t(219+25.0f*top),
-                     uint8_t(153+57.0f*top),
-                     uint8_t(81+39.0f*top),
-                     int(main*250.0f));
-    }
-}
-
-// Paint only the deep emerald glass silhouette *before* the original art
-// layer is composited. Its lower half gracefully tapers beneath the
-// CASTS/TAX rail; there is no rectangular cutoff across the gold border.
-
-void repairPlayerPlaque(int x,int y,int w,int h,bool selected) {
-    // Antialiased rounded edge ONLY: leave the glossy wine-coloured
-    // interiors, corner ornaments and gold filigree from the original asset.
-    const float r=12.0f;
-    const float halfW=w*0.5f, halfH=h*0.5f;
-    for(int py=0;py<h;++py)for(int px=0;px<w;++px) {
-        const float qx=std::fabs(float(px)+0.5f-halfW)-(halfW-r);
-        const float qy=std::fabs(float(py)+0.5f-halfH)-(halfH-r);
-        const float dx=std::max(qx,0.0f),dy=std::max(qy,0.0f);
-        const float dist=std::sqrt(dx*dx+dy*dy)+
-                          std::min(std::max(qx,qy),0.0f)-r;
-        const float stroke=std::clamp(1.10f-std::fabs(dist+0.55f),0.0f,1.0f);
-        // The source already has the complete left and bottom gilding.
-        // Only the top/right were erased with the old sample values.
-        // Selected opponents may add a separate thin teal highlight.
-        const bool missingEdge = py <= 3 || px >= w - 13;
-        if (stroke>0.0f && (selected || missingEdge)) {
-            const bool top=py<h/2;
-            blendInk(x+px,y+py,
-                     selected?143:(top?245:202),
-                     selected?239:(top?196:126),
-                     selected?198:(top?133:83),
-                     int(stroke*(selected ? 183.0f : 218.0f)));
-        }
-    }
-}
-void drawNativeChrome(const MtgGameView &view) {
-    // The original red masks erased the top/right edges of opponent plaques.
-    // Restore complete closed outlines, leaving original textured interiors.
-    const int x[3]={72,145,218};
-    for(int slot=0;slot<3;++slot) {
-        if(!view.damageIndices[slot])continue;
-        repairPlayerPlaque(x[slot],214,68,30,false);
-    }
-    // The screenshot's outer ring was torn into disconnected segments by
-    // the masking pass. Draw ONE continuous native circle after all chrome.
-    drawNativeCircle();
-}
 
 // Draw the changing part of the Edit Counters screen without touching
 // its decorative frame, header, artwork or footer.
@@ -1007,8 +840,13 @@ void drawDashboard(const MtgGameView &view) {
     } else {
         gEditBaseValid = false;
         drawHeroArt();
-        applyOrnateSkin(view);
-        drawNativeChrome(view);
+        assetBlit(hudAsset,0,0,360,360);
+        // Damage plaques are independent pieces so removing an opponent
+        // leaves no empty baked-in screenshot cell behind.
+        const int plaqueX[3]={72,145,218};
+        for(int i=0;i<3;++i)
+            if(view.damageIndices[i])
+                assetBlit(playerAsset,plaqueX[i],214,68,30);
         if (gBackdrop) {
             std::memcpy(gBackdrop, gFrame, 360u * 360u * 2u);
             std::snprintf(gBackdropDeck, sizeof(gBackdropDeck), "%s", view.deckId);
@@ -1053,7 +891,7 @@ void drawDashboard(const MtgGameView &view) {
 
     if (view.screen == MtgScreen::EditCounters) {
         if (!editReuse) {
-            chromePanel(36, 72, 288, 244, 19, kGold, kBg);
+            assetBlit(editorAsset,36,72,288,244);
             atlasText({73, 78, 213, 23}, "EDIT COUNTERS", 0, kGold);
             if (gEditBase) {
                 std::memcpy(gEditBase,gFrame,360u * 360u * 2u);
@@ -1070,7 +908,7 @@ void drawDashboard(const MtgGameView &view) {
     if (view.selectedDamage >= 0) {
         for(int i=0;i<3;++i) if(view.damageIndices[i]==view.selectedDamage+1) {
             const int x[3]={72,145,218};
-            repairPlayerPlaque(x[i],214,68,30,true);
+            assetBlit(playerSelectedAsset,x[i],214,68,30);
             break;
         }
     }
@@ -1419,16 +1257,8 @@ bool initDisplayHardware() {
         kWidth * kHeight * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gArt = static_cast<uint16_t *>(heap_caps_malloc(
         360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    gSkin = static_cast<uint8_t *>(heap_caps_malloc(
-        360 * 360 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!initAaFonts())
         ESP_LOGW(kTag, "Antialiased serif font atlas unavailable; using GFX fallback");
-    if (gSkin && !decodeSkin()) {
-        ESP_LOGE(kTag, "Bundled antialiased ornate chrome asset invalid");
-        heap_caps_free(gSkin);
-        gSkin = nullptr;
-    }
-    prepareCounterChrome();
     if (!gTransferDone || !gDmaStrip || !gFrame) {
         ESP_LOGE(kTag, "No RAM for display (PSRAM must be enabled)");
         return false;
