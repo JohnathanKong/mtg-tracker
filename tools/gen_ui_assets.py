@@ -313,7 +313,7 @@ def editor():
                 1.0,GOLD,210,True)
         jewel(c,x+direction*22,13,1.8)
     c.line(38,44,250,44,.7,GOLD,120)
-    c.line(37,225,251,225,.7,GOLD,115)
+    c.line(37,218,251,218,.7,GOLD,115)
     return c
 
 
