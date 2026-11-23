@@ -1,7 +1,7 @@
 # Generate clean 360x360 ornament as native RGBA assets during CMake configure.
 # Python standard library only. Nothing is resized or repaired on the device.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-set(MTG_GENERATED_DIR "${CMAKE_CURRENT_LIST_DIR}/generated")
+set(MTG_GENERATED_DIR "${CMAKE_CURRENT_LIST_DIR}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/../tools/gen_ui_assets.py")
 execute_process(
@@ -21,19 +21,19 @@ idf_component_register(
     SRCS "mtg_receiver.cpp" "mtg_display.cpp" "mtg_game.cpp"
     EMBED_FILES
         "ui_font_atlas.lz4"
-        "generated/hud_chrome.rgba"
-        "generated/player_normal.rgba"
-        "generated/player_selected.rgba"
-        "generated/counter_teal.rgba"
-        "generated/counter_brass.rgba"
-        "generated/counter_teal_selected.rgba"
-        "generated/counter_brass_selected.rgba"
-        "generated/pencil.rgba"
-        "generated/editor.rgba"
-        "generated/editor_row_checked.rgba"
-        "generated/editor_row_unchecked.rgba"
-        "generated/checkbox_checked.rgba"
-        "generated/checkbox_unchecked.rgba"
+        "hud_chrome.rgba"
+        "player_normal.rgba"
+        "player_selected.rgba"
+        "counter_teal.rgba"
+        "counter_brass.rgba"
+        "counter_teal_selected.rgba"
+        "counter_brass_selected.rgba"
+        "pencil.rgba"
+        "editor.rgba"
+        "editor_row_checked.rgba"
+        "editor_row_unchecked.rgba"
+        "checkbox_checked.rgba"
+        "checkbox_unchecked.rgba"
     PRIV_REQUIRES
         esp_driver_usb_serial_jtag
         esp_driver_spi
