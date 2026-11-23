@@ -909,8 +909,8 @@ void drawDashboard(const MtgGameView &view) {
 
     // Stable labels are drawn with the existing Noto Serif font atlas.
     // Decorative bitmaps never contain text or sample numbers.
-    atlasText({52,168,72,18},"CASTS",0,kIvory);
-    atlasText({215,168,44,18},"TAX",0,kIvory);
+    atlasText({39,165,45,22},"CASTS",0,kIvory);
+    atlasText({233,165,41,22},"TAX",0,kIvory);
     atlasText({91,196,178,18},"COMMANDER DAMAGE",0,kGold);
     char number[24];
     atlasText({152, 102, 56, 20}, "LIFE", 0, kGold);
@@ -918,10 +918,10 @@ void drawDashboard(const MtgGameView &view) {
     atlasText({134, 120, 92, 45}, number, 2,
               view.selected == MtgCounter::Life ? kTeal : kIvory);
     std::snprintf(number, sizeof(number), "%d", view.casts);
-    atlasText({124, 159, 31, 27}, number, 1,
+    atlasText({87, 163, 41, 26}, number, 1,
               view.selected == MtgCounter::Casts ? kTeal : kIvory);
     std::snprintf(number, sizeof(number), "+%d", view.casts * 2);
-    atlasText({265, 160, 45, 25}, number, 1, kIvory);
+    atlasText({277, 163, 51, 26}, number, 1, kIvory);
 
     // Three opponent slots are visible at once, independent of optional
     // counter pagination. Touch selects one opponent, dial adjusts damage;
