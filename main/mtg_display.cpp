@@ -860,30 +860,40 @@ void drawNativeCircle() {
     }
 }
 
-void repairLifeCrest() {
-    constexpr float kPiHalf=1.57079632679f;
-    for (int y=100;y<=156;++y) {
-        const float t=std::clamp(float(y-100)/56.0f,0.0f,1.0f);
-        // Gently flared shield silhouette: narrow crown, wide shoulders.
-        const float halfWidth=36.0f+44.0f*std::sin(t*kPiHalf);
-        const float left=180.0f-halfWidth, right=180.0f+halfWidth;
-        const int lo=std::max(0,int(left)-3),hi=std::min(359,int(right)+3);
-        for(int x=lo;x<=hi;++x) {
+// Paint only the deep emerald glass silhouette *before* the original art
+// layer is composited. Its lower half gracefully tapers beneath the
+// CASTS/TAX rail; there is no rectangular cutoff across the gold border.
+void paintCrestBase() {
+    constexpr float kHalfPi=1.57079632679f;
+    for(int y=100;y<=187;++y) {
+        float halfWidth;
+        if(y<=155) {
+            const float t=float(y-100)/55.0f;
+            halfWidth=79.0f*std::sqrt(t);
+        } else {
+            const float t=std::clamp(float(187-y)/32.0f,0.0f,1.0f);
+            halfWidth=79.0f*std::sin(t*kHalfPi);
+        }
+        if(halfWidth<0.5f) continue;
+        const float left=180.0f-halfWidth,right=180.0f+halfWidth;
+        for(int x=std::max(0,int(left)-1);
+            x<=std::min(359,int(right)+1);++x) {
             const float d=std::min(float(x)-left,right-float(x));
             if(d<=-1.0f)continue;
-            const float coverage=std::clamp(d+0.75f,0.0f,1.0f);
-            const int teal=24+int(15.0f*t);
-            // Opaque dark teal glass, slightly translucent on the rim.
-            blendInk(x,y,4,uint8_t(teal),30,int(248.0f*coverage));
+            const float cov=std::clamp(d+0.75f,0.0f,1.0f);
+            const float glow=1.0f-std::fabs(float(y)-145.0f)/75.0f;
+            blendInk(x,y,5,uint8_t(24+int(13.0f*std::max(0.0f,glow))),
+                     31,int(247.0f*cov));
         }
     }
-    // Metallic highlight follows the original elegant shield profile.
-    // Draw from the crown outward so the line remains continuous.
-    drawBezier(103,152,110,127,119,109,144,104,2.0f,235,178,91);
-    drawBezier(144,104,160,99,200,99,216,104,2.0f,249,206,125);
-    drawBezier(216,104,241,109,250,127,257,152,2.0f,235,178,91);
-    drawBezier(108,151,119,154,130,157,139,165,1.0f,113,133,99);
-    drawBezier(252,151,241,154,230,157,221,165,1.0f,113,133,99);
+}
+void repairLifeCrest() {
+    // Three continuous gilded Bezier strokes converge at a curved apex.
+    // The point at the top replaces the cropped horizontal Life rectangle.
+    drawBezier(103,152,113,126,138,102,180,99,2.0f,234,178,92);
+    drawBezier(180,99,222,102,247,126,257,152,2.0f,234,178,92);
+    drawBezier(107,154,120,155,131,158,140,166,0.9f,122,137,99);
+    drawBezier(253,154,240,155,229,158,220,166,0.9f,122,137,99);
 }
 
 void repairPlayerPlaque(int x,int y,int w,int h,bool selected) {
@@ -983,6 +993,7 @@ void drawDashboard(const MtgGameView &view) {
     } else {
         gEditBaseValid = false;
         drawHeroArt();
+        paintCrestBase();
         applyOrnateSkin(view);
         drawNativeChrome(view);
         if (gBackdrop) {
