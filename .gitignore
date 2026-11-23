@@ -9,3 +9,5 @@ managed_components/
 __pycache__/
 *.pyc
 main/generated/
+main/*.rgba
+main/hud_chrome_preview.png
