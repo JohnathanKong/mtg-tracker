@@ -774,10 +774,13 @@ void drawPaintedCounterFrame(int x, int y, int slot) {
         return;
     }
     const int sourceX = slot == 0 ? 50 : 182;
+    const int sourceRight = slot == 0 ? 177 : 307;
     for (int yy=0;yy<25;++yy) {
-        const int sy=258+yy*30/25;
+        // Include BOTH endpoints when resampling the original capsule.
+        // The previous integer mapping dropped the last gold edge pixels.
+        const int sy=258+(yy*29+12)/24;
         for (int xx=0;xx<106;++xx) {
-            const int sx=sourceX+xx*126/106;
+            const int sx=sourceX+(xx*(sourceRight-sourceX)+52)/105;
             const size_t off=(size_t(sy)*360u+size_t(sx))*2u;
             const uint8_t idx=gSkin[off];
             const uint8_t alpha=gSkin[off+1u];
