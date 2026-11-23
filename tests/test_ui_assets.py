@@ -1,6 +1,9 @@
 """Validate the two flash-embedded UI resources without third-party packages."""
 from pathlib import Path
 import struct
+import subprocess
+import sys
+import tempfile
 import unittest
 
 MAIN = Path(__file__).resolve().parents[1] / "main"
@@ -50,16 +53,37 @@ def decode_block(src: bytes, output_bytes: int) -> bytes:
 
 
 class EmbeddedUiTests(unittest.TestCase):
-    def test_ornate_chrome_exact_dimensions(self):
-        content = (MAIN / "ui_reference_chrome_256.lz4").read_bytes()
-        self.assertGreater(len(content), 768)
-        pixels = decode_block(content[768:], 360 * 360 * 2)
-        self.assertEqual(len(pixels), 259200)
-        indices = pixels[::2]
-        alpha = pixels[1::2]
-        self.assertTrue(all(0 <= i <= 255 for i in indices))
-        self.assertGreater(sum(a > 0 for a in alpha), 20000)
-        self.assertLess(sum(a > 0 for a in alpha), 360 * 360)
+    def test_native_layers_generated_independently(self):
+        script = MAIN.parent / "tools" / "gen_ui_assets.py"
+        expected = {
+            "hud_chrome": (360, 360),
+            "player_normal": (68, 30),
+            "player_selected": (68, 30),
+            "counter_teal": (106, 25),
+            "counter_brass": (106, 25),
+            "counter_teal_selected": (106, 25),
+            "counter_brass_selected": (106, 25),
+            "pencil": (33, 25),
+            "editor": (288, 244),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            subprocess.run([sys.executable, str(script), temp],
+                           capture_output=True, check=True, timeout=120)
+            assets = {}
+            for name, (width, height) in expected.items():
+                raw = (Path(temp) / (name + ".rgba")).read_bytes()
+                self.assertEqual(len(raw), width * height * 4, name)
+                assets[name] = raw
+            # No user art or baked sample numbers in the fixed chrome.
+            base = assets["hud_chrome"]
+            self.assertEqual(base[(25*360+180)*4+3], 0)
+            self.assertGreater(base[(275*360+180)*4+3], 190)
+            self.assertGreater(base[(8*360+180)*4+3], 40)
+            self.assertNotEqual(assets["counter_teal"], assets["counter_brass"])
+            self.assertNotEqual(assets["counter_teal"], assets["counter_teal_selected"])
+            self.assertNotEqual(assets["player_normal"], assets["player_selected"])
+            self.assertTrue((Path(temp)/"hud_chrome_preview.png").read_bytes()
+                            .startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
 
     def test_antialiased_serif_glyphs(self):
         content = (MAIN / "ui_font_atlas.lz4").read_bytes()
