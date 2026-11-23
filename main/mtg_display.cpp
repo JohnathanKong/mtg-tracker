@@ -916,8 +916,11 @@ void drawDashboard(const MtgGameView &view) {
     if (!gHasArt)
         atlasText({88, 55, 184, 21}, "SYNC ART", 0, kMuted);
 
-    // Static LIFE / CASTS / TAX / COMMANDER DAMAGE headings and gold filigree
-    // are part of the screenshot-derived chrome. Only live values are drawn.
+    // Stable labels are drawn with the existing Noto Serif font atlas.
+    // Decorative bitmaps never contain text or sample numbers.
+    atlasText({52,168,72,18},"CASTS",0,kIvory);
+    atlasText({215,168,44,18},"TAX",0,kIvory);
+    atlasText({91,196,178,18},"COMMANDER DAMAGE",0,kGold);
     char number[24];
     atlasText({152, 102, 56, 20}, "LIFE", 0, kGold);
     std::snprintf(number, sizeof(number), "%d", view.life);
@@ -932,16 +935,17 @@ void drawDashboard(const MtgGameView &view) {
     // Three opponent slots are visible at once, independent of optional
     // counter pagination. Touch selects one opponent, dial adjusts damage;
     // the ornate +/- controls add/remove opponents, never adjust a value.
-    const int labelX[3] = {84, 159, 232};
-    const int valueX[3] = {109, 184, 258};
+    const int cellX[3] = {72, 145, 218};
     for (int slot = 0; slot < 3; ++slot) {
         const int opponent = view.damageIndices[slot];
         if (!opponent) continue;
         char player[12];
         std::snprintf(player, sizeof(player), "P%d", opponent);
-        atlasText({labelX[slot], 215, 25, 23}, player, 0, kGold);
+        atlasText({cellX[slot]+4, 218, 19, 20}, player, 0, kGold);
         std::snprintf(number, sizeof(number), "%d", view.damageValues[slot]);
-        atlasText({valueX[slot], 211, 29, 29}, number, 1,
+        // Forty pixels reserved for THREE full digits; never clip the
+        // rightmost player or accidentally overlap another plaque.
+        atlasText({cellX[slot]+23, 216, 41, 24}, number, 1,
                   view.selectedDamage == opponent - 1 ? kTeal : kIvory);
     }
     // No oversized shared tray: its corners escaped the round safe area.
