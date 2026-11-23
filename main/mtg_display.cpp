@@ -804,16 +804,16 @@ void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
               tile.selected ? kTeal : kIvory);
 }
 void drawEditCounterButton() {
-    // Pencil-in-a-square glyph, not a diagonal arrow. Fits on the same row.
-    softCapsule(276, 259, 33, 25, 12, 236, 193, 100);
-    softStroke(283,267,289,278,1.5f,232,194,118);
-    softStroke(283,278,302,278,1.5f,232,194,118);
-    softStroke(296,278,302,273,1.5f,232,194,118);
-    softStroke(288,272,303,263,2.1f,254,228,162);
-    softStroke(291,275,306,266,2.1f,254,228,162);
-    softStroke(297,263,306,266,2.1f,254,228,162);
-    softStroke(288,272,293,278,1.9f,254,228,162);
-    softStroke(287,278,297,275,1.9f,254,228,162);
+    // Clearly recognizable pencil editing a square; inset from the rim.
+    softCapsule(276,259,33,25,12,236,193,100);
+    softStroke(283,267,283,278,1.5f,232,194,118);
+    softStroke(283,278,296,278,1.5f,232,194,118);
+    softStroke(296,278,296,273,1.5f,232,194,118);
+    softStroke(288,272,297,263,2.1f,254,228,162);
+    softStroke(291,275,300,266,2.1f,254,228,162);
+    softStroke(297,263,300,266,2.1f,254,228,162);
+    softStroke(288,272,287,278,1.9f,254,228,162);
+    softStroke(287,278,291,275,1.9f,254,228,162);
 }
 
 
