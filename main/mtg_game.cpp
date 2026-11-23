@@ -768,7 +768,7 @@ void tap(int x, int y) {
         gView.selected = MtgCounter::Casts;
         gActiveTracker = -1;
         gOpponentSelected = -1;
-    } else if (y >= 256 && y <= 289 && x >= 279 && x <= 321) {
+    } else if (y >= 256 && y <= 289 && x >= 274 && x <= 313) {
         // The only way to edit the set of optional counters.
         gView.screen = MtgScreen::EditCounters;
         gView.editScrollPx = 0;
