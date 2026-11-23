@@ -54,6 +54,9 @@ bool gBackdropValid = false;
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
 uint8_t *gSkin = nullptr;      // 4-bit packed 360x360 antialiased ornate chrome overlay
+struct CachedChromePixel { uint8_t red,green,blue,alpha; };
+constexpr int kCounterFramePixels=106*25;
+CachedChromePixel *gCounterChrome=nullptr; // two prefiltered capsule images
 uint8_t *gFontRaw = nullptr;    // unpacked 4-bit AA glyph atlas, PSRAM
 bool gAaReady = false;
 char gLoadedArtId[96] = {};
@@ -762,53 +765,79 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
 // frames. Reuse those actual pixels (compressed into 106x25) instead of
 // replacing them with blank software rectangles. The animation still moves
 // these independently, and they are omitted when the slot is empty.
-// Bilinear palette sampling avoids stair-stepping when a reference capsule
-// is fitted into a smaller 106x25 native display slot. Alpha is blended in
-// premultiplied form so the transparent edge does not acquire a dark halo.
-void drawPaintedCounterFrame(int x,int y,int slot) {
-    if (!gSkin) {
-        softCapsule(x,y,106,25,12,slot==0?81:221,
-                    slot==0?180:170,slot==0?170:91);
+// Prefilter two original metallic counter plaques ONCE into PSRAM. Their
+// smaller size is resampled with bilinear premultiplied-alpha filtering.
+// During finger movement we composite only the cached 106x25 pixels, avoiding
+// per-frame palette lookups and preserving the web-like carousel response.
+void prepareCounterChrome() {
+    if(!gSkin)return;
+    gCounterChrome=static_cast<CachedChromePixel*>(heap_caps_malloc(
+        2u*kCounterFramePixels*sizeof(CachedChromePixel),
+        MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+    if(!gCounterChrome) {
+        ESP_LOGW(kTag,"No PSRAM for prefiltered counter frames");
         return;
     }
-    const int left=slot==0?50:182;
-    const int right=slot==0?177:307;
-    for(int yy=0;yy<25;++yy) {
-        const int ty=yy*29*256/24;
-        const int sy=258+(ty>>8), fy=ty&255;
-        for(int xx=0;xx<106;++xx) {
-            const int tx=xx*(right-left)*256/105;
-            const int sx=left+(tx>>8),fx=tx&255;
-            const int x1=std::min(sx+1,right);
-            const int y1=std::min(sy+1,287);
-            const unsigned w[4]={
-                unsigned((256-fx)*(256-fy)),
-                unsigned(fx*(256-fy)),
-                unsigned((256-fx)*fy),
-                unsigned(fx*fy)
-            };
-            const int px[4]={sx,x1,sx,x1};
-            const int py[4]={sy,sy,y1,y1};
-            uint64_t r=0,g=0,b=0;
-            uint32_t total=0;
-            for(int j=0;j<4;++j) {
-                const size_t off=(size_t(py[j])*360u+size_t(px[j]))*2u;
-                const uint32_t alpha=gSkin[off+1u];
-                if(!alpha)continue;
-                const uint32_t contribution=w[j]*alpha;
-                const uint8_t *rgb=skin_start+size_t(gSkin[off])*3u;
-                total+=contribution;
-                r+=uint64_t(contribution)*rgb[0];
-                g+=uint64_t(contribution)*rgb[1];
-                b+=uint64_t(contribution)*rgb[2];
+    for(int slot=0;slot<2;++slot) {
+        const int left=slot==0?50:182;
+        const int right=slot==0?177:307;
+        for(int yy=0;yy<25;++yy) {
+            const int ty=yy*29*256/24;
+            const int sy=258+(ty>>8),fy=ty&255;
+            for(int xx=0;xx<106;++xx) {
+                const int tx=xx*(right-left)*256/105;
+                const int sx=left+(tx>>8),fx=tx&255;
+                const int x1=std::min(sx+1,right);
+                const int y1=std::min(sy+1,287);
+                const unsigned weight[4]={
+                    unsigned((256-fx)*(256-fy)),
+                    unsigned(fx*(256-fy)),
+                    unsigned((256-fx)*fy),
+                    unsigned(fx*fy)
+                };
+                const int pixelX[4]={sx,x1,sx,x1};
+                const int pixelY[4]={sy,sy,y1,y1};
+                uint64_t red=0,green=0,blue=0;
+                uint32_t total=0;
+                for(int sample=0;sample<4;++sample) {
+                    const size_t pos=(size_t(pixelY[sample])*360u+
+                                      size_t(pixelX[sample]))*2u;
+                    const uint32_t opacity=gSkin[pos+1];
+                    if(!opacity)continue;
+                    const uint32_t contribution=weight[sample]*opacity;
+                    const uint8_t*rgb=skin_start+size_t(gSkin[pos])*3u;
+                    total+=contribution;
+                    red+=uint64_t(contribution)*rgb[0];
+                    green+=uint64_t(contribution)*rgb[1];
+                    blue+=uint64_t(contribution)*rgb[2];
+                }
+                CachedChromePixel &target=gCounterChrome[
+                    slot*kCounterFramePixels+yy*106+xx];
+                target={0,0,0,0};
+                if(total) {
+                    target.red=uint8_t(red/total);
+                    target.green=uint8_t(green/total);
+                    target.blue=uint8_t(blue/total);
+                    target.alpha=uint8_t(std::min(255u,
+                        (total+32768u)>>16u));
+                }
             }
-            if(!total)continue;
-            const int alpha=std::min(255u,(total+32768u)>>16u);
-            blendInk(x+xx,y+yy,
-                     uint8_t(r/total),uint8_t(g/total),
-                     uint8_t(b/total),alpha);
         }
     }
+}
+void drawPaintedCounterFrame(int x,int y,int slot) {
+    if(!gCounterChrome) {
+        softCapsule(x,y,106,25,12,
+                    slot==0?81:221,slot==0?180:170,slot==0?170:91);
+        return;
+    }
+    const CachedChromePixel *frame=gCounterChrome+
+                                   slot*kCounterFramePixels;
+    for(int yy=0;yy<25;++yy)
+        for(int xx=0;xx<106;++xx) {
+            const CachedChromePixel &p=frame[yy*106+xx];
+            if(p.alpha)blendInk(x+xx,y+yy,p.red,p.green,p.blue,p.alpha);
+        }
 }
 
 void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
@@ -1412,6 +1441,7 @@ bool initDisplayHardware() {
         heap_caps_free(gSkin);
         gSkin = nullptr;
     }
+    prepareCounterChrome();
     if (!gTransferDone || !gDmaStrip || !gFrame) {
         ESP_LOGE(kTag, "No RAM for display (PSRAM must be enabled)");
         return false;
