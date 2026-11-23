@@ -729,21 +729,25 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
         softStroke(cx-2,cy+4,cx-2,cy+7,2.0f,red,green,blue);
         softStroke(cx+2,cy+4,cx+2,cy+7,2.0f,red,green,blue);
     } else if (std::strstr(lower,"experience") || std::strstr(lower,"storm")) {
+        // Filled crystalline star with crisp centre, instead of eight
+        // almost-invisible one-pixel hairlines.
         for(int i=0;i<8;++i) {
             const float a = float(i)*.78539816f;
             const float r = (i&1)?5.5f:9.1f;
             softStroke(cx,cy,cx+std::cos(a)*r,cy+std::sin(a)*r,
-                       i&1?1.7f:2.3f,red,green,blue);
+                       i&1?2.4f:3.0f,red,green,blue);
         }
+        softDisc(cx,cy,2.5f,205,255,239);
     } else if (std::strstr(lower,"treasure")) {
-        softStroke(cx-7,cy-4,cx+7,cy-4,2,red,green,blue);
-        softStroke(cx-7,cy-4,cx-7,cy+6,2,red,green,blue);
-        softStroke(cx+7,cy-4,cx+7,cy+6,2,red,green,blue);
-        softStroke(cx-7,cy+6,cx+7,cy+6,2,red,green,blue);
-        softStroke(cx-2,cy-8,cx+2,cy-8,2,red,green,blue);
-        softStroke(cx-2,cy-8,cx-2,cy-5,1,red,green,blue);
-        softStroke(cx+2,cy-8,cx+2,cy-5,1,red,green,blue);
-        softDisc(cx,cy,1.5f,red,green,blue);
+        // A recognizable filled treasure chest: metal lid, dark face and
+        // bright clasp remain legible at this screen's native pixel pitch.
+        softCapsule(cx-9,cy-5,18,13,3,231,186,90);
+        softStroke(cx-8,cy-3,cx+8,cy-3,2.7f,245,210,122);
+        softStroke(cx-8,cy+6,cx+8,cy+6,1.7f,171,120,60);
+        softStroke(cx-2,cy-8,cx+2,cy-8,2.0f,236,192,108);
+        softStroke(cx-2,cy-8,cx-2,cy-5,1.6f,236,192,108);
+        softStroke(cx+2,cy-8,cx+2,cy-5,1.6f,236,192,108);
+        softDisc(cx,cy+1,2.1f,255,226,141);
     } else if (std::strstr(lower,"energy")) {
         softStroke(cx+2,cy-9,cx-5,cy,2.7f,red,green,blue);
         softStroke(cx-5,cy,cx+2,cy,2.7f,red,green,blue);
