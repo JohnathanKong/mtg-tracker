@@ -107,7 +107,7 @@ class EmbeddedUiTests(unittest.TestCase):
             "checkbox_checked", "checkbox_unchecked",
         )
         for name in names:
-            self.assertIn(f'"generated/{name}.rgba"', cmake)
+            self.assertIn(f'"{name}.rgba"', cmake)
             self.assertIn(f'_binary_{name}_rgba_start', source)
             self.assertNotIn(f'_binary_generated_{name}_rgba_start', source)
 
