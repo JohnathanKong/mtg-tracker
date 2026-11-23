@@ -5,7 +5,7 @@ No screenshots, sample commander art, sampled labels, external image/font
 packages, or runtime scaling. All decorative pieces are independently drawn
 at the exact dimensions used by the 360x360 SH8601 firmware.
 
-Run: python3 tools/gen_ui_assets.py main/generated
+Run: python3 tools/gen_ui_assets.py main
 """
 from __future__ import annotations
 import math
@@ -355,7 +355,7 @@ def editor_checkbox(checked):
 
 
 def main():
-    out=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'main/generated')
+    out=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'main')
     out.mkdir(parents=True,exist_ok=True)
     assets={
         'hud_chrome':hud(),
