@@ -285,11 +285,22 @@ void applyOrnateSkin(const MtgGameView &/*view*/) {
             // interrupted ring supplied with the older flattened asset.
             if (dx * dx + dy * dy >= 167 * 167) continue;
 
-            // The source lower row contained two *oversized* baked capsules,
-            // which conflict with today's compact two-counter + pencil row.
-            // The new capsules are textured independently and only appear
-            // when that tracker is enabled.
-            if (y >= 251 && y <= 293) continue;
+            // The old lower row had two oversized capsule outlines. Their
+            // right-hand borders would stick out behind today's smaller tiles.
+            // Instead use the untouched deep-teal textured footer as an
+            // underlay; the two restored painted capsules are overlaid only
+            // when enabled. No rectangular eraser with hard seam.
+            if (y >= 251 && y <= 293) {
+                const int sourceY=328+(y-251)*14/42;
+                const size_t source=(size_t(sourceY)*360u+size_t(x))*2u;
+                const uint8_t alpha=gSkin[source+1u];
+                if(alpha) {
+                    const uint8_t *rgb=skin_start+size_t(gSkin[source])*3u;
+                    blendInk(x,y,rgb[0],rgb[1],rgb[2],
+                             std::min(205,int(alpha)));
+                }
+                continue;
+            }
 
             // Rebuild the pagination dots from game state, not an image.
             if (y >= 298 && y <= 315 && x >= 148 && x <= 211) continue;
