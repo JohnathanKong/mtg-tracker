@@ -83,7 +83,7 @@ class EmbeddedUiTests(unittest.TestCase):
             self.assertNotEqual(assets["counter_teal"], assets["counter_teal_selected"])
             self.assertNotEqual(assets["player_normal"], assets["player_selected"])
             self.assertTrue((Path(temp)/"hud_chrome_preview.png").read_bytes()
-                            .startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+                            .startswith(b"\x89PNG\r\n\x1a\n"))
 
     def test_antialiased_serif_glyphs(self):
         content = (MAIN / "ui_font_atlas.lz4").read_bytes()
