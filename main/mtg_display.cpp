@@ -915,7 +915,7 @@ void drawDashboard(const MtgGameView &view) {
     char number[24];
     atlasText({152, 102, 56, 20}, "LIFE", 0, kGold);
     std::snprintf(number, sizeof(number), "%d", view.life);
-    atlasText({134, 120, 92, 45}, number, 2,
+    atlasText({129, 120, 102, 45}, number, 2,
               view.selected == MtgCounter::Life ? kTeal : kIvory);
     std::snprintf(number, sizeof(number), "%d", view.casts);
     atlasText({87, 163, 41, 26}, number, 1,
