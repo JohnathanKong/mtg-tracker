@@ -745,16 +745,44 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
         softStroke(cx-7,cy,cx,cy-8,1.6f,red,green,blue);
     }
 }
+// The reference has beautiful jewel-enamel teal and antique-brass counter
+// frames. Reuse those actual pixels (compressed into 106x25) instead of
+// replacing them with blank software rectangles. The animation still moves
+// these independently, and they are omitted when the slot is empty.
+void drawPaintedCounterFrame(int x, int y, int slot) {
+    if (!gSkin) {
+        softCapsule(x,y,106,25,12,
+                    slot==0?81:221,slot==0?180:170,slot==0?170:91);
+        return;
+    }
+    const int sourceX = slot == 0 ? 50 : 182;
+    for (int yy=0;yy<25;++yy) {
+        const int sy=258+yy*30/25;
+        for (int xx=0;xx<106;++xx) {
+            const int sx=sourceX+xx*126/106;
+            const size_t off=(size_t(sy)*360u+size_t(sx))*2u;
+            const uint8_t idx=gSkin[off];
+            const uint8_t alpha=gSkin[off+1u];
+            if (!alpha) continue;
+            const uint8_t *rgb=skin_start+size_t(idx)*3u;
+            blendInk(x+xx,y+yy,rgb[0],rgb[1],rgb[2],alpha);
+        }
+    }
+}
+
 void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
     const float p = std::clamp(gAnimationProgress, 0.0f, 1.0f);
     // A short gold/teal highlight on selection or value changes.
     const int glow = gBottomAnimation == BottomAnimation::Pulse &&
                      gAnimatedTile == index ? int(68.0f * (1.0f-p)) : 0;
-    softCapsule(x, y, 106, 25, 12,
-                uint8_t(std::min(255, (tile.selected ? 114 : 190) + glow)),
-                uint8_t(std::min(255, (tile.selected ? 230 : 152) + glow)),
-                uint8_t(std::min(255, (tile.selected ? 209 : 91) + glow)),
-                tile.selected);
+    drawPaintedCounterFrame(x,y,index);
+    if (tile.selected || glow) {
+        // Small jewel-like selection glint, without covering the painted
+        // texture with an opaque rectangle.
+        softStroke(float(x+8),float(y+3),float(x+92),float(y+3),
+                   1.1f,uint8_t(std::min(255,192+glow)),
+                   uint8_t(std::min(255,222+glow)),191);
+    }
     bottomIcon(x + 20, y + 12, tile.label, tile.selected);
     // Divider and large clean numeric value; never draw a text label here.
     softStroke(float(x+39),float(y+5),float(x+39),float(y+20),
