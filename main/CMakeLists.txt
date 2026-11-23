@@ -1,9 +1,10 @@
-# Generate clean 360x360 ornament as native RGBA assets during CMake configure.
-# Python standard library only. Nothing is resized or repaired on the device.
+# Extract 13 independently generated transparent art assets at native dimensions.
+# Python standard library only. Artwork is supplied in assets/ as compressed RGBA.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(MTG_GENERATED_DIR "${CMAKE_CURRENT_LIST_DIR}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_LIST_DIR}/../tools/gen_ui_assets.py")
+    "${CMAKE_CURRENT_LIST_DIR}/../tools/gen_ui_assets.py"
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/mtg_ornate_firmware_assets.zip")
 execute_process(
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_LIST_DIR}/../tools/gen_ui_assets.py"

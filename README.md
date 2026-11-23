@@ -174,3 +174,7 @@ The original untested **Arduino/PlatformIO prototype used LittleFS**. This ESP-I
 The firmware uses the same **MTG1** deck-sync protocol as the desktop app. It validates each block, CRC-32, and JSON before replacing previously saved profiles. No Wi-Fi, NFC or additional external hardware is required for this stage.
 
 **GC8 remains separate and untouched.** This repository's `build.bat`, firmware and flash settings apply only to your MTG knob.
+
+## Layered ornate UI artwork
+
+The HUD uses a professionally generated gold-and-emerald sprite pack in `assets/mtg_ornate_firmware_assets.zip` (13 independent RGBA layers). The firmware's build-time `tools/gen_ui_assets.py` validates and extracts exact-size sprites into `main/*.rgba` without resampling. No dragon art, counter values or sample text are baked into these assets; uploaded commander art and live counters remain separate. To change the skin, replace the ZIP with a matching asset pack. See `main/mtg_ui_geometry.h` for the fixed 360×360 safety bounds. The original code-generated line-art has been replaced by the image-generated artwork.
