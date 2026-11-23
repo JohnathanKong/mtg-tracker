@@ -835,50 +835,72 @@ void drawNativeCircle() {
             blendInk(x,y,246,194,103,int(coverage*246.0f));
     }
 }
+// The real source design uses a shaped emerald crest and gilded maroon
+// opponent plaques, not rounded software rectangles. Reconstruct ONLY the
+// portions that were erased from the flattened reference asset.
+void repairLifeCrest() {
+    constexpr float kPiHalf=1.57079632679f;
+    for (int y=100;y<=156;++y) {
+        const float t=std::clamp(float(y-100)/56.0f,0.0f,1.0f);
+        // Gently flared shield silhouette: narrow crown, wide shoulders.
+        const float halfWidth=36.0f+44.0f*std::sin(t*kPiHalf);
+        const float left=180.0f-halfWidth, right=180.0f+halfWidth;
+        const int lo=std::max(0,int(left)-3),hi=std::min(359,int(right)+3);
+        for(int x=lo;x<=hi;++x) {
+            const float d=std::min(float(x)-left,right-float(x));
+            if(d<=-1.0f)continue;
+            const float coverage=std::clamp(d+0.75f,0.0f,1.0f);
+            const int teal=24+int(15.0f*t);
+            // Opaque dark teal glass, slightly translucent on the rim.
+            blendInk(x,y,4,uint8_t(teal),30,int(248.0f*coverage));
+        }
+    }
+    // Metallic highlight follows the original elegant shield profile.
+    // Draw from the crown outward so the line remains continuous.
+    drawBezier(103,152,110,127,119,109,144,104,2.0f,235,178,91);
+    drawBezier(144,104,160,99,200,99,216,104,2.0f,249,206,125);
+    drawBezier(216,104,241,109,250,127,257,152,2.0f,235,178,91);
+    drawBezier(108,151,119,154,130,157,139,165,1.0f,113,133,99);
+    drawBezier(252,151,241,154,230,157,221,165,1.0f,113,133,99);
+}
+
+void repairPlayerPlaque(int x,int y,int w,int h,bool selected) {
+    // Antialiased rounded edge ONLY: leave the glossy wine-coloured
+    // interiors, corner ornaments and gold filigree from the original asset.
+    const float r=12.0f;
+    const float halfW=w*0.5f, halfH=h*0.5f;
+    for(int py=0;py<h;++py)for(int px=0;px<w;++px) {
+        const float qx=std::fabs(float(px)+0.5f-halfW)-(halfW-r);
+        const float qy=std::fabs(float(py)+0.5f-halfH)-(halfH-r);
+        const float dx=std::max(qx,0.0f),dy=std::max(qy,0.0f);
+        const float dist=std::sqrt(dx*dx+dy*dy)+
+                          std::min(std::max(qx,qy),0.0f)-r;
+        const float stroke=std::clamp(1.10f-std::fabs(dist+0.55f),0.0f,1.0f);
+        if(stroke>0.0f) {
+            const bool top=py<h/2;
+            blendInk(x+px,y+py,
+                     selected?143:(top?245:202),
+                     selected?239:(top?196:126),
+                     selected?198:(top?133:83),
+                     int(stroke*245.0f));
+        }
+    }
+}
 void drawNativeChrome(const MtgGameView &view) {
-    // The gold/teal controls sit below the hero artwork as one set of
-    // independently drawn components; every border is fully closed.
-    softCapsule(29,157,302,42,18,212,168,84);
-    softStroke(44,160,103,160,1.3f,223,182,103);
-    softStroke(257,160,316,160,1.3f,223,182,103);
-    softStroke(180,164,180,194,1.0f,120,154,141);
+    // Repaired crest over the real image, plus the original filigree
+    // underneath. No duplicate box/bar artwork or baked example numbers.
+    repairLifeCrest();
 
-    // Fitted center crest, drawn AFTER the Casts/Tax strip so it overlaps
-    // cleanly like a web z-index layer. No pasted bitmap holes.
-    softCapsule(110,98,140,75,28,238,193,102);
-    drawBezier(110,135,102,144,100,147,88,154,1.6f,235,177,90);
-    drawBezier(250,135,258,144,260,147,272,154,1.6f,235,177,90);
-    drawBezier(146,171,166,174,171,183,180,190,1.6f,237,186,100);
-    drawBezier(180,190,189,183,194,174,214,171,1.6f,237,186,100);
-
-    // Commander damage is a permanent, independently bordered region.
-    softStroke(32,208,100,208,1.3f,197,150,76);
-    softStroke(260,208,328,208,1.3f,197,150,76);
-    softCapsule(26,210,308,40,18,202,159,84);
+    // The original red masks erased the top/right edges of opponent plaques.
+    // Restore complete closed outlines, leaving original textured interiors.
+    const int x[3]={72,145,218};
     for(int slot=0;slot<3;++slot) {
         if(!view.damageIndices[slot])continue;
-        const int x=77+73*slot;
-        softCapsule(x,215,66,29,10,
-                    view.selectedDamage==view.damageIndices[slot]-1?111:206,
-                    view.selectedDamage==view.damageIndices[slot]-1?225:117,
-                    view.selectedDamage==view.damageIndices[slot]-1?184:100,
-                    view.selectedDamage==view.damageIndices[slot]-1);
+        repairPlayerPlaque(x[slot],214,68,30,
+                           view.selectedDamage==view.damageIndices[slot]-1);
     }
-    // Real circular minus and plus controls (tap sizes match their bounds).
-    softCapsule(32,215,31,31,15,228,188,101);
-    softCapsule(297,215,31,31,15,228,188,101);
-    softStroke(40,230,55,230,2.1f,251,222,161);
-    softStroke(305,230,320,230,2.1f,251,222,161);
-    softStroke(312,222,312,238,2.1f,251,222,161);
-
-    // Bottom decorative flourish sits entirely inside the screen circle.
-    drawBezier(69,306,109,312,123,308,145,305,1.4f,172,122,64);
-    drawBezier(215,305,237,308,251,312,291,306,1.4f,172,122,64);
-    // No tiny screenshot-embedded lettering: live, complete labels that
-    // remain aligned to the independently rendered shapes.
-    atlasText({64,164,58,21},"CASTS",0,kIvory);
-    atlasText({218,164,41,21},"TAX",0,kIvory);
-    atlasText({93,194,174,16},"COMMANDER DAMAGE",0,kGold);
+    // The screenshot's outer ring was torn into disconnected segments by
+    // the masking pass. Draw ONE continuous native circle after all chrome.
     drawNativeCircle();
 }
 
