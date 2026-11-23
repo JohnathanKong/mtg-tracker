@@ -805,15 +805,15 @@ void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
 }
 void drawEditCounterButton() {
     // Pencil-in-a-square glyph, not a diagonal arrow. Fits on the same row.
-    softCapsule(282, 259, 33, 25, 12, 236, 193, 100);
-    softStroke(289,267,289,278,1.5f,232,194,118);
-    softStroke(289,278,302,278,1.5f,232,194,118);
-    softStroke(302,278,302,273,1.5f,232,194,118);
-    softStroke(294,272,303,263,2.1f,254,228,162);
-    softStroke(297,275,306,266,2.1f,254,228,162);
-    softStroke(303,263,306,266,2.1f,254,228,162);
-    softStroke(294,272,293,278,1.9f,254,228,162);
-    softStroke(293,278,297,275,1.9f,254,228,162);
+    softCapsule(276, 259, 33, 25, 12, 236, 193, 100);
+    softStroke(283,267,289,278,1.5f,232,194,118);
+    softStroke(283,278,302,278,1.5f,232,194,118);
+    softStroke(296,278,302,273,1.5f,232,194,118);
+    softStroke(288,272,303,263,2.1f,254,228,162);
+    softStroke(291,275,306,266,2.1f,254,228,162);
+    softStroke(297,263,306,266,2.1f,254,228,162);
+    softStroke(288,272,293,278,1.9f,254,228,162);
+    softStroke(287,278,297,275,1.9f,254,228,162);
 }
 
 
