@@ -818,7 +818,7 @@ void prepareCounterChrome() {
                     target.red=uint8_t(red/total);
                     target.green=uint8_t(green/total);
                     target.blue=uint8_t(blue/total);
-                    target.alpha=uint8_t(std::min(255u,
+                    target.alpha=uint8_t(std::min<uint32_t>(255u,
                         (total+32768u)>>16u));
                 }
             }
@@ -882,19 +882,6 @@ void drawEditCounterButton() {
 // photograph and erased numbers with rectangular patches, cutting Life,
 // opponent and circular borders. These components have complete geometry and
 // are independently composited over the deck artwork.
-void drawBezier(float x0,float y0,float x1,float y1,
-                float x2,float y2,float x3,float y3,
-                float thickness,uint8_t r,uint8_t g,uint8_t b) {
-    float px=x0, py=y0;
-    constexpr int kSegments=18;
-    for (int i=1;i<=kSegments;++i) {
-        const float t=float(i)/float(kSegments), u=1.0f-t;
-        const float nx=u*u*u*x0+3*u*u*t*x1+3*u*t*t*x2+t*t*t*x3;
-        const float ny=u*u*u*y0+3*u*u*t*y1+3*u*t*t*y2+t*t*t*y3;
-        softStroke(px,py,nx,ny,thickness,r,g,b);
-        px=nx; py=ny;
-    }
-}
 
 void drawNativeCircle() {
     // A SINGLE continuously sampled rim. Metallic two-tone reflections
