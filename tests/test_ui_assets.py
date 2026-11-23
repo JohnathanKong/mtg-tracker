@@ -93,6 +93,24 @@ class EmbeddedUiTests(unittest.TestCase):
             self.assertTrue((Path(temp)/"hud_chrome_preview.png").read_bytes()
                             .startswith(b"\x89PNG\r\n\x1a\n"))
 
+    def test_esp_idf_embedded_asset_symbols(self):
+        # ESP-IDF strips generated/ from each object basename when producing
+        # its embedded assembly. A previous linker failure used the directory
+        # prefix in the external symbol names.
+        source = (MAIN / "mtg_display.cpp").read_text()
+        cmake = (MAIN / "CMakeLists.txt").read_text()
+        names = (
+            "hud_chrome", "player_normal", "player_selected",
+            "counter_teal", "counter_brass", "counter_teal_selected",
+            "counter_brass_selected", "pencil", "editor",
+            "editor_row_checked", "editor_row_unchecked",
+            "checkbox_checked", "checkbox_unchecked",
+        )
+        for name in names:
+            self.assertIn(f'"generated/{name}.rgba"', cmake)
+            self.assertIn(f'_binary_{name}_rgba_start', source)
+            self.assertNotIn(f'_binary_generated_{name}_rgba_start', source)
+
     def test_antialiased_serif_glyphs(self):
         content = (MAIN / "ui_font_atlas.lz4").read_bytes()
         declared = struct.unpack_from("<I", content)[0]
