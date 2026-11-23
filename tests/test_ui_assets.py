@@ -65,6 +65,10 @@ class EmbeddedUiTests(unittest.TestCase):
             "counter_brass_selected": (106, 25),
             "pencil": (33, 25),
             "editor": (288, 244),
+            "editor_row_checked": (250, 39),
+            "editor_row_unchecked": (250, 39),
+            "checkbox_checked": (20, 20),
+            "checkbox_unchecked": (20, 20),
         }
         with tempfile.TemporaryDirectory() as temp:
             subprocess.run([sys.executable, str(script), temp],
@@ -82,6 +86,10 @@ class EmbeddedUiTests(unittest.TestCase):
             self.assertNotEqual(assets["counter_teal"], assets["counter_brass"])
             self.assertNotEqual(assets["counter_teal"], assets["counter_teal_selected"])
             self.assertNotEqual(assets["player_normal"], assets["player_selected"])
+            self.assertNotEqual(assets["editor_row_checked"],
+                                assets["editor_row_unchecked"])
+            self.assertNotEqual(assets["checkbox_checked"],
+                                assets["checkbox_unchecked"])
             self.assertTrue((Path(temp)/"hud_chrome_preview.png").read_bytes()
                             .startswith(b"\x89PNG\r\n\x1a\n"))
 
