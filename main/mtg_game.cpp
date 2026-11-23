@@ -594,8 +594,10 @@ void changeCounter(int direction) {
              gActiveTracker >= 0 && gActiveTracker < int(gTrackers.size()))
         number = &gTrackers[size_t(gActiveTracker)].value;
     if (!number) return;
+    const int maxValue = gView.selected == MtgCounter::CommanderDamage ? 999 : 9999;
     const int updated = std::clamp(*number + direction,
-                                   gView.selected == MtgCounter::Life ? -999 : 0, 9999);
+                                   gView.selected == MtgCounter::Life ? -999 : 0,
+                                   maxValue);
     if (*number == updated) return;
     *number = updated;
     if (gView.selected == MtgCounter::Dynamic)
