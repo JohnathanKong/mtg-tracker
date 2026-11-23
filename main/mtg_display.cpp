@@ -836,19 +836,30 @@ void drawBezier(float x0,float y0,float x1,float y1,
 }
 
 void drawNativeCircle() {
-    // Single continuous gold circle, with antialiasing at its edges.
-    // 1.9px ring is deliberately not split into top and bottom assets.
-    for (int y=4;y<356;++y) for (int x=4;x<356;++x) {
-        const float dx=float(x)-180.0f, dy=float(y)-180.0f;
-        const float d=std::sqrt(dx*dx+dy*dy);
-        const float coverage=std::clamp(1.25f-std::fabs(d-171.8f),0.0f,1.0f);
-        if (coverage>0.0f)
-            blendInk(x,y,246,194,103,int(coverage*246.0f));
+    // A SINGLE continuously sampled rim. Metallic two-tone reflections
+    // are computed from the same circle; they cannot split into separately
+    // positioned top/bottom bitmap pieces.
+    for (int y=5;y<355;++y) for (int x=5;x<355;++x) {
+        const float dx=float(x)-180.0f,dy=float(y)-180.0f;
+        const float r2=dx*dx+dy*dy;
+        // Avoid an expensive square root over the entire display.
+        if (r2<166.0f*166.0f || r2>175.0f*175.0f) continue;
+        const float d=std::sqrt(r2);
+        const float main=std::clamp(1.20f-std::fabs(d-171.75f),0.0f,1.0f);
+        const float inner=std::clamp(0.75f-std::fabs(d-168.9f),0.0f,1.0f);
+        // Same polished-gold palette as the clean artwork reference:
+        // pale champagne across the upper arc; antique gold below.
+        const float top=std::clamp((230.0f-float(y))/185.0f,0.0f,1.0f);
+        if (inner>0)
+            blendInk(x,y,164,119,66,int(inner*145.0f));
+        if (main>0)
+            blendInk(x,y,uint8_t(219+25.0f*top),
+                     uint8_t(153+57.0f*top),
+                     uint8_t(81+39.0f*top),
+                     int(main*250.0f));
     }
 }
-// The real source design uses a shaped emerald crest and gilded maroon
-// opponent plaques, not rounded software rectangles. Reconstruct ONLY the
-// portions that were erased from the flattened reference asset.
+
 void repairLifeCrest() {
     constexpr float kPiHalf=1.57079632679f;
     for (int y=100;y<=156;++y) {
