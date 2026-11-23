@@ -326,6 +326,34 @@ def png_bytes(canvas):
     return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('!2I5B',canvas.w,canvas.h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw,9))+chunk(b'IEND',b'')
 
 
+def editor_row(checked):
+    c=Canvas(250,39)
+    if checked:
+        top,bottom=(20,85,85),(10,43,53)
+        border=(122,220,184)
+    else:
+        top,bottom=(25,46,52),(9,24,33)
+        border=(138,119,91)
+    c.rounded(.5,.5,249,38,9,top,bottom,border,1.3)
+    c.line(41,3,215,3,.65,BRIGHT,68 if checked else 37)
+    # Restrained gilded leaves at both ends of each selectable row.
+    for x,k in ((9,1),(241,-1)):
+        c.curve(((x,28),(x+7*k,23),(x+9*k,13),(x+14*k,9)),
+                .85,GOLD,120 if checked else 70)
+    return c
+
+
+def editor_checkbox(checked):
+    c=Canvas(20,20)
+    color=(21,88,81) if checked else (23,39,43)
+    border=(130,232,193) if checked else (166,146,112)
+    c.rounded(.5,.5,19,19,5,color,(8,29,35),border,1.5)
+    if checked:
+        c.line(4,10,8,14,2.4,(225,255,233))
+        c.line(8,14,16,5,2.4,(225,255,233))
+    return c
+
+
 def main():
     out=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'main/generated')
     out.mkdir(parents=True,exist_ok=True)
@@ -339,6 +367,10 @@ def main():
         'counter_brass_selected':counter('brass',True),
         'pencil':pencil(),
         'editor':editor(),
+        'editor_row_checked':editor_row(True),
+        'editor_row_unchecked':editor_row(False),
+        'checkbox_checked':editor_checkbox(True),
+        'checkbox_unchecked':editor_checkbox(False),
     }
     for name,canvas in assets.items():
         (out/(name+'.rgba')).write_bytes(canvas.data)
