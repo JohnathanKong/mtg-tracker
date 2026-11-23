@@ -692,9 +692,9 @@ void tap(int x, int y) {
         return;
     }
     if (gView.screen == MtgScreen::EditCounters) {
-        // Checkboxes change visibility, not the numeric value of a counter.
-        // DONE exits; swiping switches between four-option pages.
-        if (y < 90 || y >= 317) {
+        // Checkboxes change visibility, not values. The footer DONE
+        // target is inside the ornate modal, below the scrolling viewport.
+        if (y < 90 || (y >= 295 && y <= 326 && x >= 111 && x <= 250)) {
             gView.screen = MtgScreen::Dashboard;
             publish();
             return;
