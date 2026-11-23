@@ -598,10 +598,14 @@ void atlasText(TextRect rect, const char *text, int fontSize,
                 const size_t off = size_t(gy) * size_t(g->width) + size_t(gx);
                 const uint8_t packed = g->bitmap[off >> 1];
                 const int coverage = int((off & 1) ? (packed & 15u) : (packed >> 4));
-                // Keep solid pixels solid; retain antialiasing only in the
-                // one-pixel edge rather than misting tiny glyphs with grey.
-                const int opacity = coverage <= 1 ? 0 :
-                    std::min(255, (coverage - 1) * 255 / 12);
+                // A calibrated alpha ramp preserves sub-pixel edge coverage
+                // without treating low-coverage samples as black/white. The
+                // previous hard cutoff made diagonal serif edges look jagged.
+                constexpr uint8_t kCoverageAlpha[16] = {
+                    0, 8, 22, 39, 58, 78, 99, 121,
+                    143, 164, 184, 203, 221, 235, 247, 255
+                };
+                const int opacity = kCoverageAlpha[coverage];
                 if (opacity) {
                     const int px = x0 + pen + g->xBearing + gx;
                     const int py = baseline + g->yBearing + gy;
@@ -758,26 +762,51 @@ void bottomIcon(int cx, int cy, const char *label, bool selected) {
 // frames. Reuse those actual pixels (compressed into 106x25) instead of
 // replacing them with blank software rectangles. The animation still moves
 // these independently, and they are omitted when the slot is empty.
-void drawPaintedCounterFrame(int x, int y, int slot) {
+// Bilinear palette sampling avoids stair-stepping when a reference capsule
+// is fitted into a smaller 106x25 native display slot. Alpha is blended in
+// premultiplied form so the transparent edge does not acquire a dark halo.
+void drawPaintedCounterFrame(int x,int y,int slot) {
     if (!gSkin) {
-        softCapsule(x,y,106,25,12,
-                    slot==0?81:221,slot==0?180:170,slot==0?170:91);
+        softCapsule(x,y,106,25,12,slot==0?81:221,
+                    slot==0?180:170,slot==0?170:91);
         return;
     }
-    const int sourceX = slot == 0 ? 50 : 182;
-    const int sourceRight = slot == 0 ? 177 : 307;
-    for (int yy=0;yy<25;++yy) {
-        // Include BOTH endpoints when resampling the original capsule.
-        // The previous integer mapping dropped the last gold edge pixels.
-        const int sy=258+(yy*29+12)/24;
-        for (int xx=0;xx<106;++xx) {
-            const int sx=sourceX+(xx*(sourceRight-sourceX)+52)/105;
-            const size_t off=(size_t(sy)*360u+size_t(sx))*2u;
-            const uint8_t idx=gSkin[off];
-            const uint8_t alpha=gSkin[off+1u];
-            if (!alpha) continue;
-            const uint8_t *rgb=skin_start+size_t(idx)*3u;
-            blendInk(x+xx,y+yy,rgb[0],rgb[1],rgb[2],alpha);
+    const int left=slot==0?50:182;
+    const int right=slot==0?177:307;
+    for(int yy=0;yy<25;++yy) {
+        const int ty=yy*29*256/24;
+        const int sy=258+(ty>>8), fy=ty&255;
+        for(int xx=0;xx<106;++xx) {
+            const int tx=xx*(right-left)*256/105;
+            const int sx=left+(tx>>8),fx=tx&255;
+            const int x1=std::min(sx+1,right);
+            const int y1=std::min(sy+1,287);
+            const unsigned w[4]={
+                unsigned((256-fx)*(256-fy)),
+                unsigned(fx*(256-fy)),
+                unsigned((256-fx)*fy),
+                unsigned(fx*fy)
+            };
+            const int px[4]={sx,x1,sx,x1};
+            const int py[4]={sy,sy,y1,y1};
+            uint64_t r=0,g=0,b=0;
+            uint32_t total=0;
+            for(int j=0;j<4;++j) {
+                const size_t off=(size_t(py[j])*360u+size_t(px[j]))*2u;
+                const uint32_t alpha=gSkin[off+1u];
+                if(!alpha)continue;
+                const uint32_t contribution=w[j]*alpha;
+                const uint8_t *rgb=skin_start+size_t(gSkin[off])*3u;
+                total+=contribution;
+                r+=uint64_t(contribution)*rgb[0];
+                g+=uint64_t(contribution)*rgb[1];
+                b+=uint64_t(contribution)*rgb[2];
+            }
+            if(!total)continue;
+            const int alpha=std::min(255u,(total+32768u)>>16u);
+            blendInk(x+xx,y+yy,
+                     uint8_t(r/total),uint8_t(g/total),
+                     uint8_t(b/total),alpha);
         }
     }
 }
