@@ -7,6 +7,7 @@
 // See THIRD_PARTY_NOTICES.md. Screen is optional to the serial receiver.
 
 #include "mtg_display.h"
+#include "mtg_ui_geometry.h"
 #include "panel_init_commands.h"
 #include "fonts/FreeSans9pt7b.h"
 #include "fonts/FreeSans18pt7b.h"
@@ -811,7 +812,9 @@ void drawSmallCounter(int x, int y, const MtgTile &tile, int index) {
 }
 void drawEditCounterButton() {
     // Clearly recognizable pencil editing a square; inset from the rim.
-    softCapsule(276,259,33,25,12,236,193,100);
+    softCapsule(mtg_ui::kEditButton.x,mtg_ui::kEditButton.y,
+                mtg_ui::kEditButton.w,mtg_ui::kEditButton.h,
+                12,236,193,100);
     softStroke(283,267,283,278,1.5f,232,194,118);
     softStroke(283,278,296,278,1.5f,232,194,118);
     softStroke(296,278,296,273,1.5f,232,194,118);
@@ -1092,8 +1095,10 @@ void drawDashboard(const MtgGameView &view) {
     }
     // No oversized shared tray: its corners escaped the round safe area.
     // Individual capsules and Edit all remain inside the native circle.
-    if (view.tileCount > 0) drawSmallCounter(50, 259, view.tiles[0], 0);
-    if (view.tileCount > 1) drawSmallCounter(165, 259, view.tiles[1], 1);
+    if (view.tileCount > 0) drawSmallCounter(mtg_ui::kOptionalLeft.x,
+        mtg_ui::kOptionalLeft.y, view.tiles[0], 0);
+    if (view.tileCount > 1) drawSmallCounter(mtg_ui::kOptionalRight.x,
+        mtg_ui::kOptionalRight.y, view.tiles[1], 1);
     drawEditCounterButton();
 
     // Only counter pages move on a horizontal swipe. Life, Casts, Tax and
@@ -1117,9 +1122,11 @@ void bottomFromBackdrop() {
 }
 void drawBottomPair(const MtgGameView &view, int shift) {
     if (view.tileCount > 0)
-        drawSmallCounter(50+shift,259,view.tiles[0],0);
+        drawSmallCounter(mtg_ui::kOptionalLeft.x+shift,
+                         mtg_ui::kOptionalLeft.y,view.tiles[0],0);
     if (view.tileCount > 1)
-        drawSmallCounter(165+shift,259,view.tiles[1],1);
+        drawSmallCounter(mtg_ui::kOptionalRight.x+shift,
+                         mtg_ui::kOptionalRight.y,view.tiles[1],1);
 }
 // Render the carousel at its *actual finger position*. Both pages are
 // clipped inside the fixed counter viewport, so they cannot escape the circle
