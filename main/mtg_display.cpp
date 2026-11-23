@@ -50,7 +50,6 @@ bool gEditBaseValid = false;
 char gBackdropDeck[96]{};
 uint32_t gBackdropRevision = 0;
 int gBackdropOpponents[3]{-1, -1, -1};
-int gBackdropSelectedDamage = -1;
 bool gBackdropValid = false;
 uint16_t *gDmaStrip = nullptr;  // 360x16 RGB565 in DMA-capable internal RAM
 uint16_t *gArt = nullptr;       // native 360x360 RGB565 user-supplied commander art
@@ -940,8 +939,7 @@ void drawNativeChrome(const MtgGameView &view) {
     const int x[3]={72,145,218};
     for(int slot=0;slot<3;++slot) {
         if(!view.damageIndices[slot])continue;
-        repairPlayerPlaque(x[slot],214,68,30,
-                           view.selectedDamage==view.damageIndices[slot]-1);
+        repairPlayerPlaque(x[slot],214,68,30,false);
     }
     // The screenshot's outer ring was torn into disconnected segments by
     // the masking pass. Draw ONE continuous native circle after all chrome.
@@ -990,8 +988,7 @@ void drawDashboard(const MtgGameView &view) {
     loadArtFor(view);
     bool reuse = gBackdrop && gBackdropValid &&
                  std::strcmp(gBackdropDeck, view.deckId) == 0 &&
-                 gBackdropRevision == view.artworkRevision &&
-                 gBackdropSelectedDamage == view.selectedDamage;
+                 gBackdropRevision == view.artworkRevision;
     for (int i = 0; i < 3; ++i)
         if (gBackdropOpponents[i] != view.damageIndices[i]) reuse = false;
     // The static modal shape/title do not need to be redrawn on each
@@ -1012,7 +1009,6 @@ void drawDashboard(const MtgGameView &view) {
             std::memcpy(gBackdrop, gFrame, 360u * 360u * 2u);
             std::snprintf(gBackdropDeck, sizeof(gBackdropDeck), "%s", view.deckId);
             gBackdropRevision = view.artworkRevision;
-            gBackdropSelectedDamage = view.selectedDamage;
             for (int i = 0; i < 3; ++i)
                 gBackdropOpponents[i] = view.damageIndices[i];
             gBackdropValid = true;
@@ -1063,6 +1059,16 @@ void drawDashboard(const MtgGameView &view) {
         drawEditDynamic(view);
         atlasText({136,318,88,17},"DONE",0,kGold);
         return;
+    }
+
+    // Selection tint is a dynamic overlay, not baked into the backdrop.
+    // Changing opponents does not repaint the entire artwork and filigree.
+    if (view.selectedDamage >= 0) {
+        for(int i=0;i<3;++i) if(view.damageIndices[i]==view.selectedDamage+1) {
+            const int x[3]={72,145,218};
+            repairPlayerPlaque(x[i],214,68,30,true);
+            break;
+        }
     }
 
     if (!gHasArt)
