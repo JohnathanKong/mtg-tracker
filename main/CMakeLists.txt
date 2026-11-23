@@ -30,6 +30,10 @@ idf_component_register(
         "generated/counter_brass_selected.rgba"
         "generated/pencil.rgba"
         "generated/editor.rgba"
+        "generated/editor_row_checked.rgba"
+        "generated/editor_row_unchecked.rgba"
+        "generated/checkbox_checked.rgba"
+        "generated/checkbox_unchecked.rgba"
     PRIV_REQUIRES
         esp_driver_usb_serial_jtag
         esp_driver_spi
