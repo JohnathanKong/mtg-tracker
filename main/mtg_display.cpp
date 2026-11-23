@@ -832,12 +832,9 @@ void drawDashboard(const MtgGameView &view) {
         gEditBaseValid = false;
         drawHeroArt();
         assetBlit(hudAsset,0,0,360,360);
-        // Damage plaques are independent pieces so removing an opponent
-        // leaves no empty baked-in screenshot cell behind.
-        const int plaqueX[3]={72,145,218};
-        for(int i=0;i<3;++i)
-            if(view.damageIndices[i])
-                assetBlit(playerAsset,plaqueX[i],214,68,30);
+        // Player plaques are rendered as independent live components below.
+        // Do NOT bake a normal plaque into the cached background, or a
+        // selected plaque will produce a doubled border.
         if (gBackdrop) {
             std::memcpy(gBackdrop, gFrame, 360u * 360u * 2u);
             std::snprintf(gBackdropDeck, sizeof(gBackdropDeck), "%s", view.deckId);
@@ -894,14 +891,14 @@ void drawDashboard(const MtgGameView &view) {
         return;
     }
 
-    // Selection tint is a dynamic overlay, not baked into the backdrop.
-    // Changing opponents does not repaint the entire artwork and filigree.
-    if (view.selectedDamage >= 0) {
-        for(int i=0;i<3;++i) if(view.damageIndices[i]==view.selectedDamage+1) {
-            const int x[3]={72,145,218};
-            assetBlit(playerSelectedAsset,x[i],214,68,30);
-            break;
-        }
+    // One plaque sprite per visible opponent. No overlapping normal +
+    // selected outlines; the original ornamental background is untouched.
+    const int playerX[3]={72,145,218};
+    for(int i=0;i<3;++i) {
+        if (!view.damageIndices[i]) continue;
+        const bool selected=view.selectedDamage==view.damageIndices[i]-1;
+        assetBlit(selected ? playerSelectedAsset : playerAsset,
+                  playerX[i],214,68,30);
     }
 
     if (!gHasArt)
