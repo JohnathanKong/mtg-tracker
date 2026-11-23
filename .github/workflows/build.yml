@@ -28,6 +28,8 @@ jobs:
         run: g++ -std=c++17 -Wall -Wextra -Werror -I main tests/test_rotary.cpp -o /tmp/test_rotary && /tmp/test_rotary
       - name: Verify continuous scroll geometry and touch row hit testing
         run: g++ -std=c++17 -Wall -Wextra -Werror -I main tests/test_scroll.cpp -o /tmp/test_scroll && /tmp/test_scroll
+      - name: Check round-screen layout stays inside gold rim
+        run: g++ -std=c++17 -Wall -Wextra -Werror -I main tests/test_ui_geometry.cpp -o /tmp/test_ui_geometry && /tmp/test_ui_geometry
       - name: Build using Espressif's ESP-IDF v6.1 container
         uses: espressif/esp-idf-ci-action@v1
         with:
